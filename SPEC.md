@@ -100,6 +100,14 @@ Directives appear **only in the closed sizes** (compact capsule). The expanded v
 When a session has no active directive, the idle island is just the minimal circle: it says "something is running" and
 its state, nothing more.
 
+### Choices and opening the place
+
+An `attention` may carry `open` (what tapping it opens: any URL such as `vscode://anthropic.claude-code/open?session=…`,
+a path, or an app bundle id) and `choices` (`[{"id","label","style"}]`, style `primary` / `destructive`). The card
+shows the choices as buttons (two short ones side by side, otherwise a list); the pick is written to the state as
+`choice` for the agent waiting on it (`presence ask` prints it). A choice with id `open` also opens `open`. Without
+choices, a tap on the waiting island opens `open` directly. `choose` (field `choice`) records a pick made elsewhere.
+
 ### Edge glow while hidden
 
 While a session on this device is hidden: a full-screen, touch-through layer draws a red glow along all four screen

@@ -3,7 +3,7 @@ import Foundation
 /// One change in what an agent is doing on a device. See SPEC.md §1: the same JSON goes to the Mac app and the Android host.
 public struct PresenceEvent: Codable, Equatable {
     public enum Kind: String, Codable, CaseIterable {
-        case start, intervene, step, detail, directive, attention, resume, done, fail, end, expand, collapse, hide, unhide
+        case start, intervene, step, detail, directive, attention, resume, done, fail, end, expand, collapse, hide, unhide, choose
     }
 
     public var v: Int = 1
@@ -23,10 +23,16 @@ public struct PresenceEvent: Codable, Equatable {
     public var ttl: Double?
     /// How long a `hide` lasts (seconds, default 30).
     public var forSeconds: Double?
+    /// What "Aç" opens: a URL (any scheme, e.g. vscode://…, x-apple.systempreferences:…), a file path or an app.
+    public var open: String?
+    /// Buttons on the attention card; the owner's pick is reported back as `choice` (SPEC "Choices").
+    public var choices: [Choice]?
+    /// `choose`: the picked choice id (a button press made somewhere else, e.g. on another device).
+    public var choice: String?
     public var ts: Double?
 
     enum CodingKeys: String, CodingKey {
-        case v, id, type, agent, app, device, title, steps, step, detail, dont, message, ttl, ts
+        case v, id, type, agent, app, device, title, steps, step, detail, dont, message, ttl, ts, open, choices, choice
         case dos = "do"
         case forSeconds = "for"
     }
@@ -53,6 +59,9 @@ public struct PresenceEvent: Codable, Equatable {
         message = try? c.decodeIfPresent(String.self, forKey: .message)
         ttl = try? c.decodeIfPresent(Double.self, forKey: .ttl)
         forSeconds = try? c.decodeIfPresent(Double.self, forKey: .forSeconds)
+        open = try? c.decodeIfPresent(String.self, forKey: .open)
+        choices = try? c.decodeIfPresent([Choice].self, forKey: .choices)
+        choice = try? c.decodeIfPresent(String.self, forKey: .choice)
         ts = try? c.decodeIfPresent(Double.self, forKey: .ts)
     }
 
@@ -127,6 +136,20 @@ public struct Step: Codable, Equatable, ExpressibleByStringLiteral {
     }
 }
 
+/// A button the owner can press on the attention card. `style`: "primary" (accent fill), "destructive", or plain.
+/// The id "open" also opens the session's `open` target.
+public struct Choice: Codable, Equatable, Hashable {
+    public var id: String
+    public var label: String
+    public var style: String?
+
+    public init(id: String, label: String, style: String? = nil) {
+        self.id = id
+        self.label = label
+        self.style = style
+    }
+}
+
 /// Something the owner should (not) do right now, shown only in the closed sizes.
 public struct Directive: Equatable, Hashable {
     public enum Kind { case dont, doThis }
@@ -152,6 +175,10 @@ public struct Session: Codable, Equatable, Identifiable {
     public var ttl: Double?
     /// The agent took the written warnings off the screen until then (SPEC `hide`); the edges glow red instead.
     public var hiddenUntil: Double?
+    public var open: String?
+    public var choices: [Choice] = []
+    /// The id of the choice the owner pressed (cleared by the next attention).
+    public var choice: String?
     public var stopRequested = false
     /// The owner has seen the attention request (tapped it), so it may shrink.
     public var acknowledged = false
@@ -159,7 +186,8 @@ public struct Session: Codable, Equatable, Identifiable {
     public var updated: Double
 
     enum CodingKeys: String, CodingKey {
-        case id, agent, app, device, title, steps, step, detail, dont, message, phase, ttl, hiddenUntil, stopRequested, acknowledged, started, updated
+        case id, agent, app, device, title, steps, step, detail, dont, message, phase, ttl, hiddenUntil, open, choices, choice,
+             stopRequested, acknowledged, started, updated
         case dos = "do"
     }
 
@@ -277,6 +305,8 @@ public enum Reducer {
         if let d = e.dont { s.dont = d.filter { !$0.isEmpty } }
         if let d = e.dos { s.dos = d.filter { !$0.isEmpty } }
         if let t = e.ttl { s.ttl = t > 0 ? t : nil }
+        if let o = e.open { s.open = o.isEmpty ? nil : o }
+        if let c = e.choices { s.choices = c }
         s.updated = now
 
         var cue = Cue.none
@@ -304,6 +334,8 @@ public enum Reducer {
             s.phase = .waiting
             s.acknowledged = false
             s.hiddenUntil = nil
+            s.choice = nil
+            if e.choices == nil { s.choices = [] }
             cue = .announce
         case .resume:
             s.phase = .running
@@ -329,6 +361,9 @@ public enum Reducer {
             s.hiddenUntil = now + max(1, e.forSeconds ?? 30) * 1000
         case .unhide:
             s.hiddenUntil = nil
+        case .choose:
+            s.choice = e.choice
+            s.acknowledged = true
         case .end:
             break
         }
@@ -360,6 +395,7 @@ public struct PresenceState: Codable {
         public var stopRequested: Bool
         public var acknowledged: Bool
         public var updated: Double
+        public var choice: String?
     }
 
     public var v = 1
@@ -372,7 +408,7 @@ public struct PresenceState: Codable {
     public init(_ sessions: [Session], lastTs: Double?, full: Bool) {
         self.sessions = sessions.map {
             Entry(id: $0.id, phase: $0.phase, step: $0.step, total: $0.total, stopRequested: $0.stopRequested,
-                  acknowledged: $0.acknowledged, updated: $0.updated)
+                  acknowledged: $0.acknowledged, updated: $0.updated, choice: $0.choice)
         }
         self.lastTs = lastTs
         self.full = full ? sessions : nil

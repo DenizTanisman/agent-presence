@@ -155,6 +155,12 @@ public final class PresenceStore: ObservableObject {
     /// Tap on the island (not on a button).
     public func tapIsland() {
         guard let p = primary else { return }
+        // Something waits for the owner and says where: a tap takes them straight there (choices stay on the card).
+        if p.phase == .waiting, p.open != nil, p.choices.isEmpty {
+            openTarget(p)
+            settle()
+            return
+        }
         if mode == .warning {
             afterWarning = nil
             show(.expanded, .user, for: timing.userOpen)
@@ -174,6 +180,27 @@ public final class PresenceStore: ObservableObject {
     public func stop(_ id: String) {
         mutate(id) { $0.stopRequested = true; $0.acknowledged = true }
         show(.expanded, .user, for: 2.5)
+    }
+
+    /// The owner pressed a choice on the attention card: it is reported back in the state (`choice`) for the agent
+    /// waiting on it; "open" also opens the session's target.
+    public func choose(_ id: String, _ choice: String) {
+        if choice == "open", let s = sessions.first(where: { $0.id == id }) { openTarget(s) }
+        mutate(id) { $0.choice = choice; $0.acknowledged = true }
+    }
+
+    /// Opens what the session points at: a URL of any scheme, a file or folder, or an app by name / bundle id.
+    public func openTarget(_ s: Session) {
+        guard let t = s.open else { return }
+        let ws = NSWorkspace.shared
+        if t.hasPrefix("/") || t.hasPrefix("~") {
+            ws.open(URL(fileURLWithPath: (t as NSString).expandingTildeInPath))
+        } else if let u = URL(string: t), u.scheme != nil, !(u.scheme ?? "").contains(".") {
+            ws.open(u)
+        } else if let app = ws.urlForApplication(withBundleIdentifier: t) {
+            ws.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+        }
+        mutate(s.id) { $0.acknowledged = true }
     }
 
     public func close(_ id: String) {

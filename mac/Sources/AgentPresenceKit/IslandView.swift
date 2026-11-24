@@ -533,14 +533,38 @@ struct ExpandedBody: View {
     }
 
     @ViewBuilder private var buttons: some View {
+        if s.phase == .waiting, s.choice == nil, !s.choices.isEmpty,
+           s.choices.count > 2 || s.choices.contains(where: { $0.label.count > 14 }) {
+            ChoiceButtons(s: s, store: store)
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder private var row: some View {
         HStack(spacing: 8) {
             Spacer()
             switch s.phase {
             case .done, .failed:
                 PillButton(title: L.close, icon: "xmark", style: .neutral) { store.close(s.id) }
             case .waiting:
-                if !s.stopRequested { PillButton(title: L.stop, icon: "stop.fill", style: .stop) { store.stop(s.id) } }
-                PillButton(title: L.ok, icon: "checkmark", style: .ok) { store.minimize() }
+                if let picked = s.choice {
+                    // Pressed: say so until the agent takes it (a moment later the card goes).
+                    Label(s.choices.first { $0.id == picked }?.label ?? picked, systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.greenText)
+                } else if !s.choices.isEmpty {
+                    ChoiceButtons(s: s, store: store)
+                } else {
+                    if s.open != nil {
+                        PillButton(title: L.tr ? "Aç" : "Open", icon: "arrow.up.forward.app", style: .neutral) {
+                            store.openTarget(s)
+                            store.minimize()
+                        }
+                    }
+                    if !s.stopRequested { PillButton(title: L.stop, icon: "stop.fill", style: .stop) { store.stop(s.id) } }
+                    PillButton(title: L.ok, icon: "checkmark", style: .ok) { store.minimize() }
+                }
             case .running:
                 if !s.stopRequested { PillButton(title: L.stop, icon: "stop.fill", style: .stop) { store.stop(s.id) } }
                 if nowMillis() - s.updated > 10 * 60_000 {
@@ -548,6 +572,54 @@ struct ExpandedBody: View {
                 }
                 PillButton(title: L.minimize, icon: "chevron.up", style: .neutral) { store.minimize() }
             }
+        }
+    }
+}
+
+/// The owner answers right here (SPEC "Choices"): up to two short choices sit side by side, more become a list.
+struct ChoiceButtons: View {
+    var s: Session
+    @ObservedObject var store: PresenceStore
+
+    private var stacked: Bool { s.choices.count > 2 || s.choices.contains { $0.label.count > 14 } }
+
+    var body: some View {
+        if stacked {
+            VStack(alignment: .trailing, spacing: 6) {
+                ForEach(s.choices, id: \.self) { c in
+                    Button { store.choose(s.id, c.id) } label: {
+                        HStack {
+                            Text(c.label).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                            Spacer(minLength: 8)
+                            Image(systemName: c.id == "open" ? "arrow.up.forward.app" : "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundStyle(c.style == "primary" ? Color.black : (c.style == "destructive" ? Theme.redText : Theme.text))
+                        .padding(.horizontal, 13)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(c.style == "primary" ? Theme.amber : Color.white.opacity(0.08)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            ForEach(s.choices, id: \.self) { c in
+                PillButton(title: c.label, icon: icon(c), style: c.style == "primary" ? .ok : (c.style == "destructive" ? .stop : .neutral)) {
+                    store.choose(s.id, c.id)
+                }
+            }
+        }
+    }
+
+    private func icon(_ c: Choice) -> String {
+        if c.id == "open" { return "arrow.up.forward.app" }
+        switch c.style {
+        case "primary": return "checkmark"
+        case "destructive": return "xmark"
+        default: return "circle"
         }
     }
 }

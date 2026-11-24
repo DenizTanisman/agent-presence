@@ -21,13 +21,19 @@ tmp=$(mktemp)
 jq --arg hook "$hook" --arg mode "${1:-install}" '
   def ours: (.hooks // []) | any(.command | tostring | contains("presence-hook.sh"));
   def clean(ev): if .hooks[ev] then .hooks[ev] |= map(select(ours | not)) | (if .hooks[ev] == [] then del(.hooks[ev]) else . end) else . end;
-  .hooks = (.hooks // {}) | clean("PreToolUse") | clean("Stop")
+  .hooks = (.hooks // {}) | clean("PreToolUse") | clean("Stop") | clean("PermissionRequest") | clean("Notification")
+  | clean("PostToolUse") | clean("UserPromptSubmit")
   | if $mode == "--uninstall" then (if .hooks == {} then del(.hooks) else . end)
     else
       .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [
         {"matcher": "mcp__computer-use__.*|mcp__remote-devices__computer.*", "hooks": [{"type": "command", "command": ($hook + " pre"), "timeout": 15}]},
-        {"matcher": "Bash", "hooks": [{"type": "command", "command": ($hook + " pre"), "timeout": 15}]}
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": ($hook + " pre"), "timeout": 15}]},
+        {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": ($hook + " question"), "timeout": 40}]}
       ])
+      | .hooks.PermissionRequest = ((.hooks.PermissionRequest // []) + [{"hooks": [{"type": "command", "command": ($hook + " permission"), "timeout": 60}]}])
+      | .hooks.Notification = ((.hooks.Notification // []) + [{"matcher": "permission_prompt|elicitation_dialog|agent_needs_input", "hooks": [{"type": "command", "command": ($hook + " notify"), "async": true}]}])
+      | .hooks.PostToolUse = ((.hooks.PostToolUse // []) + [{"hooks": [{"type": "command", "command": ($hook + " answered"), "async": true}]}])
+      | .hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + [{"hooks": [{"type": "command", "command": ($hook + " answered"), "async": true}]}])
       | .hooks.Stop = ((.hooks.Stop // []) + [{"hooks": [{"type": "command", "command": ($hook + " stop"), "timeout": 20}]}])
     end
 ' "$settings" > "$tmp"

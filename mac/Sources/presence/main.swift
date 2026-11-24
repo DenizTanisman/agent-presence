@@ -20,6 +20,8 @@ presence: tell the owner what the agent is doing on their Mac or phone.
   presence done ["<summary>"]                      finished (stays until the owner closes it)
   presence fail "<why>"                            gave up
   presence end                                     take it away now
+  presence ask "<msg>" [--choice id=Label]... [--primary ID] [--destructive ID] [--open URL] [--timeout S]
+                [--no-wait] [--keep]               ask the owner on the island; prints the picked id
   presence hide [--for S] | unhide                 agent only: warnings off the screen, edges glow red (default 30 s)
   presence expand | collapse | status [--json] | demo [--on mac|phone] [--fast]
   presence auto mac|phone [--tool NAME]            hook helper: "Claude is using your Mac/phone" until finish
@@ -45,7 +47,7 @@ struct Args {
     var values: [String: [String]] = [:]
     var flags: Set<String> = []
 
-    static let boolFlags: Set<String> = ["no-mirror", "json", "quiet", "fast", "help"]
+    static let boolFlags: Set<String> = ["no-mirror", "json", "quiet", "fast", "help", "no-wait", "keep"]
     static let aliases = ["t": "title", "a": "app", "s": "steps", "d": "detail", "h": "help"]
 
     init(_ argv: [String]) {
@@ -442,6 +444,63 @@ case "done", "fail":
 case "end":
     let s = session()
     deliver([event(.end, s.id, a)], to: s.show, args: a, checkStop: false)
+
+case "ask":
+    // Something for the owner on the Mac island: a question or a request, with buttons (--choice id=Label) and/or a
+    // place to open (--open URL|path|bundle id). Waits for the pick (prints its id) unless --no-wait.
+    // Exit: 0 picked, 5 timed out, 6 the owner closed it.
+    let owner = ownerID(a)
+    let id = a.one("id") ?? "ask-\((owner ?? "x").prefix(8))"
+    var e = PresenceEvent(id: id, type: .attention)
+    e.ts = nowMillis()
+    e.agent = a.one("agent") ?? "Claude"
+    e.app = a.one("app")
+    e.device = "mac"
+    e.title = a.one("title") ?? (isTurkish() ? "Claude seni bekliyor" : "Claude needs you")
+    e.message = a.text
+    e.open = a.one("open")
+    let primary = Set(a.many("primary") ?? []), destructive = Set(a.many("destructive") ?? [])
+    e.choices = (a.many("choice") ?? []).compactMap { spec -> Choice? in
+        guard let eq = spec.firstIndex(of: "=") else { return nil }
+        let cid = String(spec[..<eq]), label = String(spec[spec.index(after: eq)...])
+        return Choice(id: cid, label: label, style: primary.contains(cid) ? "primary" : (destructive.contains(cid) ? "destructive" : nil))
+    }
+    var reg = Registry.load()
+    reg.remember(id, .init(device: "mac", show: ["mac"], owner: owner, at: nowMillis()), makeCurrent: false)
+    reg.save()
+    deliver([e], to: ["mac"], args: a, checkStop: false)
+    if a.flags.contains("no-wait") { exit(0) }
+    let deadline = Date().addingTimeInterval(a.one("timeout").flatMap(Double.init) ?? 90)
+    func endIt(after: Double = 0) {
+        if after > 0 { usleep(useconds_t(after * 1_000_000)) }
+        var x = PresenceEvent(id: id, type: .end)
+        x.ts = nowMillis()
+        deliver([x], to: ["mac"], args: a, checkStop: false)
+    }
+    while Date() < deadline {
+        usleep(150_000)
+        guard let st = readMacState() else { continue }
+        guard let entry = st.sessions.first(where: { $0.id == id }) else { print("dismissed"); exit(6) }
+        if let c = entry.choice {
+            print(c)
+            endIt(after: 0.5) // the pressed state shows for a moment
+            exit(0)
+        }
+    }
+    if !a.flags.contains("keep") { endIt() }
+    print("timeout")
+    exit(5)
+
+case "clear-asks":
+    // This agent session's questions/requests are answered elsewhere (or the owner typed): take them off the island.
+    guard let owner = ownerID(a) else { exit(0) }
+    let reg = Registry.load()
+    let live = Set((readMacState()?.sessions ?? []).map(\.id))
+    for (id, entry) in reg.sessions where entry.owner == owner && id.hasPrefix("ask-") && live.contains(id) {
+        var x = PresenceEvent(id: id, type: .end)
+        x.ts = nowMillis()
+        deliver([x], to: ["mac"], args: a, checkStop: false)
+    }
 
 case "hide", "unhide":
     // Only the agent does this: it must see or tap what is under the island. The written warnings leave the driven

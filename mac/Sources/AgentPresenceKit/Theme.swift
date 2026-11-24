@@ -69,9 +69,23 @@ enum AppIcons {
                 found = NSWorkspace.shared.icon(forFile: "/Applications/\(hit)")
             }
         }
+        let ws = NSWorkspace.shared
+        if found == nil, let id = aliases[name.lowercased()], let url = ws.urlForApplication(withBundleIdentifier: id) {
+            found = ws.icon(forFile: url.path)
+        }
+        if found == nil, let path = ws.fullPath(forApplication: name) {
+            // Anywhere LaunchServices knows it (an app kept outside /Applications, for example).
+            found = ws.icon(forFile: path)
+        }
         cache[name] = found
         return found
     }
+
+    /// Short names agents use for apps whose bundle is called something else.
+    private static let aliases = [
+        "vs code": "com.microsoft.VSCode", "vscode": "com.microsoft.VSCode", "code": "com.microsoft.VSCode",
+        "terminal": "com.apple.Terminal", "cursor": "com.todesktop.230313mzl4w4u92", "claude": "com.anthropic.claudefordesktop",
+    ]
 }
 
 /// The target app's icon, or a neutral glyph when it is not on this Mac.
