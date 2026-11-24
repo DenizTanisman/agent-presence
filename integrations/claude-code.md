@@ -20,7 +20,7 @@ Claude itself drives during it; while any such task is still ahead, the closed i
 
 | hook | when | what |
 |---|---|---|
-| PreToolUse `mcp__computer-use__.*`, `mcp__remote-devices__computer.*` | a computer-use tool is about to run | opens "Claude · Mac — Mac'i kullanıyor" with "Klavye ve fareye dokunma" (once per Claude session; later calls only update "tıklıyor / yazıyor / bakıyor") |
+| PreToolUse `mcp__computer-use__.*`, `mcp__remote-devices__computer.*` | a computer-use tool is about to run | opens "Claude · Mac — Mac'i kullanıyor" with "Klavyeye ve trackpad'e dokunma" (once per Claude session; later calls only update "tıklıyor / yazıyor / bakıyor") |
 | PreToolUse `Bash` | the command drives the phone over adb (`shell input`, `uiautomator`, `monkey`, `am start`) | the same for the phone, with "Ekrana dokunma" |
 | Stop | Claude's turn ends | every session of this Claude session that still runs is marked done ("Bitti") |
 

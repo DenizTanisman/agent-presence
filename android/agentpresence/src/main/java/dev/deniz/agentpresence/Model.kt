@@ -188,8 +188,14 @@ data class Session(
                 keys -> out += Directive(Strings.noKeys)
                 mouse -> out += Directive(Strings.noMouse)
             }
-            if ("touch" in uses) out += Directive(Strings.noTouch)
-            for (d in ahead.flatMap { it.dont } + dont) out += Directive(d)
+            val touch = "touch" in uses
+            if (touch) out += Directive(Strings.noTouch)
+            // One warning is said once: a typed "don't" that only repeats a generated one is dropped (SPEC).
+            for (d in ahead.flatMap { it.dont } + dont) {
+                if ((keys || mouse) && mentions(d, POINTER_WORDS)) continue
+                if (touch && mentions(d, TOUCH_WORDS)) continue
+                out += Directive(d)
+            }
             for (d in doList) out += Directive(d, positive = true)
             return out.distinct()
         }
@@ -240,6 +246,21 @@ data class Session(
     }
 
     companion object {
+        /** Words that make a typed "don't" a repeat of the keyboard/trackpad warning ("imlec" = imleci, imlece). */
+        private val POINTER_WORDS = listOf("klavye", "keyboard", "fare", "mouse", "trackpad", "imleç", "imlec")
+
+        /** Words that make it a repeat of the touch warning. Not "dokun": "Kabloya dokunma" must stay. */
+        private val TOUCH_WORDS = listOf("ekran", "screen", "telefon", "phone")
+
+        private val TURKISH = java.util.Locale.forLanguageTag("tr")
+
+        /** Case-insensitive, Turkish-aware ("İmleç" → "imleç") and plain ("IMLEC" → "imlec"). */
+        internal fun mentions(text: String, words: List<String>): Boolean {
+            val tr = text.lowercase(TURKISH)
+            val plain = text.lowercase(java.util.Locale.ROOT)
+            return words.any { it in tr || it in plain }
+        }
+
         fun fromJson(o: JSONObject): Session {
             fun arr(k: String): List<String> {
                 val a = o.optJSONArray(k) ?: return emptyList()

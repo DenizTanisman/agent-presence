@@ -180,15 +180,23 @@ public struct Session: Codable, Equatable, Identifiable {
         func add(_ t: String, _ k: Directive.Kind = .dont) {
             if !t.isEmpty && !out.contains(where: { $0.text == t }) { out.append(Directive(text: t, kind: k)) }
         }
+        // The island lives on a MacBook: the pointer is the trackpad.
         switch (uses.contains(.keyboard), uses.contains(.mouse)) {
-        case (true, true): add(tr ? "Klavye ve fareye dokunma" : "Don't touch the keyboard or mouse")
+        case (true, true): add(tr ? "Klavyeye ve trackpad'e dokunma" : "Don't touch the keyboard or trackpad")
         case (true, false): add(tr ? "Klavyeye dokunma" : "Don't type")
-        case (false, true): add(tr ? "Fareye dokunma" : "Don't touch the mouse")
+        case (false, true): add(tr ? "Trackpad'e dokunma" : "Don't touch the trackpad")
         default: break
         }
         if uses.contains(.touch) { add(tr ? "Ekrana dokunma" : "Don't touch the screen") }
-        remaining.flatMap(\.dont).forEach { add($0) }
-        dont.forEach { add($0) }
+        // A hand-written "don't" that only repeats a generated one is said once (SPEC "Directives on screen").
+        let pointer = uses.contains(.keyboard) || uses.contains(.mouse)
+        func repeats(_ t: String) -> Bool {
+            let l = t.lowercased(with: Locale(identifier: "tr_TR"))
+            if pointer && ["klavye", "keyboard", "fare", "mouse", "trackpad", "imleç", "imlec"].contains(where: l.contains) { return true }
+            if uses.contains(.touch) && ["ekran", "screen", "telefon", "phone"].contains(where: l.contains) { return true }
+            return false
+        }
+        (remaining.flatMap(\.dont) + dont).filter { !repeats($0) }.forEach { add($0) }
         dos.forEach { add($0, .doThis) }
         return out
     }

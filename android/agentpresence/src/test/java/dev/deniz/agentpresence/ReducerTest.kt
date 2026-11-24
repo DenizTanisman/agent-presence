@@ -190,7 +190,7 @@ class ReducerTest {
     @Test fun aLaterStepThatUsesTheMouseWarnsFromTheStart() {
         val (s, _) = run(plan)
         assertEquals(1, s!!.step)
-        assertEquals(listOf("-Klavye ve fareye dokunma", "-Spotify'ı kapatma"), s.texts())
+        assertEquals(listOf("-Klavyeye ve trackpad'e dokunma", "-Spotify'ı kapatma"), s.texts())
     }
 
     @Test fun aFinishedStepTakesItsWarningAway() {
@@ -209,7 +209,7 @@ class ReducerTest {
 
     @Test fun touchMakesItsOwnLine() {
         val (s, _) = run("""{"id":"t","type":"start","steps":[{"title":"Dokun","uses":["touch","mouse"]}]}""")
-        assertEquals(listOf("-Fareye dokunma", "-Ekrana dokunma"), s!!.texts())
+        assertEquals(listOf("-Trackpad'e dokunma", "-Ekrana dokunma"), s!!.texts())
     }
 
     @Test fun sessionDontAndDoJoinTheComputedOnes() {
@@ -236,6 +236,31 @@ class ReducerTest {
         assertEquals(s, Session.fromJson(s!!.toJson()))
         val again = PresenceEvent.parse(PresenceEvent(id = "x", type = "start", steps = s.steps).toJson().toString()).single()
         assertEquals(s.steps, again.steps)
+    }
+
+    // ---------------------------------------------------------------- v1.2: one warning is said once
+
+    @Test fun aTypedKeyboardOrMouseDontIsDroppedWhenTheWarningIsGenerated() {
+        val (s, _) = run("""{"id":"k","type":"start","steps":[{"title":"Yaz","uses":["keyboard","mouse"],
+            "dont":["Klavyeye yazma"]}],"dont":["Fareyi oynatma","İMLECİ KIPIRDATMA","Don't touch the Mouse","Trackpad'i kullanma"]}""")
+        assertEquals(listOf("-Klavyeye ve trackpad'e dokunma"), s!!.texts())
+    }
+
+    @Test fun aTypedScreenDontIsDroppedWhenTheTouchWarningIsGenerated() {
+        val (s, _) = run("""{"id":"t","type":"start","steps":[{"title":"Kaydır","uses":["touch"],"dont":["Ekranı kilitleme"]}],
+            "dont":["TELEFONU bırakma","Don't use the phone","Kabloya dokunma"]}""")
+        assertEquals("only real repeats go; \"Kabloya dokunma\" stays", listOf("-Ekrana dokunma", "-Kabloya dokunma"), s!!.texts())
+    }
+
+    @Test fun anUnrelatedDontStaysNextToAGeneratedWarning() {
+        val (s, _) = run("""{"id":"u","type":"start","steps":[{"title":"Ekle","uses":["keyboard","touch"]}],
+            "dont":["Spotify'ı kapatma"]}""")
+        assertEquals(listOf("-Klavyeye dokunma", "-Ekrana dokunma", "-Spotify'ı kapatma"), s!!.texts())
+    }
+
+    @Test fun withoutAGeneratedWarningNothingIsDropped() {
+        val (s, _) = run("""{"id":"n","type":"start","steps":["Aç"],"dont":["Klavyeye dokunma","Ekranı kapatma"]}""")
+        assertEquals(listOf("-Klavyeye dokunma", "-Ekranı kapatma"), s!!.texts())
     }
 
     @Test fun mirror() {

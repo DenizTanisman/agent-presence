@@ -78,10 +78,13 @@ agent works on the phone). A session driven on the **Mac** shows only on the Mac
 The **active directives** of a running session are computed, never typed twice:
 
 1. Union of `uses` over every step that is not finished yet (the current one and the ones after it). If even one
-   remaining step drives the keyboard or the mouse, the warning shows. Generated text:
-   keyboard + mouse → "Klavye ve fareye dokunma", keyboard → "Klavyeye dokunma", mouse → "Fareye dokunma",
-   touch → "Ekrana dokunma".
-2. Plus the `dont` of those remaining steps, plus the session `dont`.
+   remaining step drives the keyboard or the mouse, the warning shows. Generated text (the island lives on a
+   MacBook, so the pointer is the trackpad): keyboard + mouse → "Klavyeye ve trackpad'e dokunma",
+   keyboard → "Klavyeye dokunma", mouse → "Trackpad'e dokunma", touch → "Ekrana dokunma".
+2. Plus the `dont` of those remaining steps, plus the session `dont`, **except** a `dont` that only repeats a
+   generated one: when a keyboard/mouse warning is generated, a `dont` mentioning klavye/keyboard, fare/mouse,
+   trackpad or imleç is dropped; when the touch warning is generated, one mentioning ekran/screen/telefon/phone is
+   dropped. One warning is said once.
 3. Plus the session `do` (shown green).
 
 Directives belong to the device being driven (`device`). A mirror on the other device shows the session's progress
@@ -186,6 +189,10 @@ colors on both.
 - **Buttons.** Capsules, height 30, 12.5 semibold, leading SF Symbol / vector icon: **Durdur** (`stop.fill`) red at
   18 % fill with red text; **Küçült** (`chevron.up`) and **Kapat** (`xmark`) white at 10 % with `#F5F5F7` text;
   **Tamam** (`checkmark`) amber fill with black text.
+- **Glow.** Every alert glows in its accent, like the directive capsule: the island/card while it waits for the owner
+  (amber, softly pulsing 1.6 s), when it failed (red) and for the done announcement (green); the minimal circle too.
+  Glow = shadow of the shape in the accent, 45 % opacity, radius 14 (pulse 30 % ↔ 60 %). Nothing glows while it
+  simply runs.
 - **Motion.** Springs (response 0.4, damping 0.82); capsules enter with scale 0.92 → 1 and fade.
 
 ## 5. UI strings (TR default, EN when the system language is not Turkish)
@@ -206,9 +213,9 @@ colors on both.
 | on_phone | Telefonda | On phone |
 | running | Sürüyor | Running |
 | pending | Sırada | Next |
-| no_keys_mouse | Klavye ve fareye dokunma | Don't touch the keyboard or mouse |
+| no_keys_mouse | Klavyeye ve trackpad'e dokunma | Don't touch the keyboard or trackpad |
 | no_keys | Klavyeye dokunma | Don't type |
-| no_mouse | Fareye dokunma | Don't touch the mouse |
+| no_mouse | Trackpad'e dokunma | Don't touch the trackpad |
 | no_touch | Ekrana dokunma | Don't touch the screen |
 
 ## 6. Android transport (adb, used by the Mac CLI)

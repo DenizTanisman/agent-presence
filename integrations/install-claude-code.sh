@@ -54,8 +54,10 @@ Before you drive the Mac screen (computer use: clicks, typing, keys) or the phon
 launching apps), announce the task with \`presence\`, in the owner's language:
 - \`presence start "<what you are doing>" --app <App> --steps "<task 1 [klavye,fare]|task 2|task 3 [ekran]>"\`
   (add \`--on phone\` when you drive the phone). 2–6 short tasks. Tag a task with what YOU drive during it:
-  \`[klavye]\`, \`[fare]\`, \`[klavye,fare]\` on the Mac, \`[ekran]\` on the phone. Then the owner sees "don't touch"
-  until those tasks are done. Untagged tasks only show progress.
+  \`[klavye]\`, \`[fare]\` (= trackpad), \`[klavye,fare]\` on the Mac, \`[ekran]\` on the phone. Then the owner sees
+  "don't touch" until those tasks are done. Untagged tasks only show progress. The tags already produce the
+  keyboard/trackpad/screen warning: do NOT also write it with \`--dont\` (use \`--dont\` only for something else,
+  e.g. "Finder pencerelerini kapatma").
 - \`presence step\` when a task is done. \`presence intervene\` when you touch the device again after a pause.
 - \`presence wait "<what you need from the owner>"\` when you need them to act, then \`presence resume\`.
 - Finish with \`presence done "<result>"\` or \`presence fail "<why>"\`.

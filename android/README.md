@@ -24,8 +24,12 @@ The protocol and the look are shared with the Mac library: see [`../SPEC.md`](..
 
 Directives are computed (SPEC "Directives on screen"): a step may say which input the agent itself drives,
 `{"title":"Mesajı yaz","uses":["touch","keyboard"]}`. While any step that is not finished yet drives an input, the
-capsule says so ("Ekrana dokunma", "Klavyeye dokunma", ...), plus the steps' own `dont`, the session `dont` and `do`.
-Nothing is shown while the agent waits for you or once it is over.
+capsule says so ("Ekrana dokunma", "Klavyeye ve trackpad'e dokunma", ...), plus the steps' own `dont`, the session
+`dont` and `do`. A typed "don't" that only repeats a generated warning (one about the keyboard, trackpad or screen) is
+dropped, so each warning is said once. Nothing is shown while the agent waits for you or once it is over.
+
+Alerts glow in their accent (SPEC §4): the card, the pill or the circle pulses amber while the agent waits for you,
+glows red when it failed and green when it is done. Nothing glows while it simply runs.
 
 One circle tracks the whole task: an arc orbits it while the agent works; a check draws itself, then the next
 number slides in when a step is finished; a ripple goes out when it is done; an amber halo pulses while it waits

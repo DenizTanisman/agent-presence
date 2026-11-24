@@ -151,9 +151,57 @@ public struct IslandRoot: View {
         .background(shape.fill(Theme.surface))
         .overlay(geo.hasNotch ? nil : shape.stroke(Color.white.opacity(0.12), lineWidth: 1))
         .clipShape(shape)
+        .modifier(Glow(color: Glow.color(for: s), pulse: s.phase == .waiting && !s.acknowledged))
         .contentShape(shape)
         .onTapGesture { store.tapIsland() }
         .hitArea()
+    }
+}
+
+/// Alerts glow in their accent, like the directive capsule (SPEC §4 "Glow"): amber and softly pulsing while the
+/// agent waits for the owner, red when it failed, green when it is done. Nothing while it simply runs.
+struct Glow: ViewModifier {
+    var color: Color?
+    var pulse: Bool
+    @State private var bright = false
+    /// The pulse calls for attention for 20 s, then rests as a steady glow (the animation costs a few % CPU).
+    @State private var rested = false
+
+    static func color(for s: Session) -> Color? {
+        if s.stopRequested && s.isLive { return Theme.amber }
+        switch s.phase {
+        case .waiting: return Theme.amber
+        case .failed: return Theme.red
+        case .done: return Theme.green
+        case .running: return nil
+        }
+    }
+
+    func body(content: Content) -> some View {
+        let pulsing = pulse && !rested
+        let strength = color == nil ? 0 : (pulsing ? (bright ? 0.6 : 0.3) : 0.45)
+        return content
+            .shadow(color: (color ?? .clear).opacity(strength), radius: 14)
+            .shadow(color: (color ?? .clear).opacity(strength * 0.5), radius: 4)
+            .onAppear { animate() }
+            .onChange(of: pulse) { _, _ in
+                rested = false
+                animate()
+            }
+            .task(id: pulse) {
+                guard pulse else { return }
+                try? await Task.sleep(for: .seconds(20))
+                withAnimation(.easeOut(duration: 0.4)) { rested = true; bright = false }
+            }
+    }
+
+    private func animate() {
+        guard pulse else {
+            withAnimation(.easeOut(duration: 0.3)) { bright = false }
+            return
+        }
+        bright = false
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { bright = true }
     }
 }
 
@@ -201,6 +249,7 @@ struct MinimalCircle: View {
         StepDot(phase: s.phase, number: s.hasSteps ? s.step : nil, size: d - 11, badge: badge)
             .frame(width: d, height: d)
             .background(Circle().fill(Theme.surface))
+            .modifier(Glow(color: Glow.color(for: s), pulse: s.phase == .waiting && !s.acknowledged))
             .contentShape(Circle())
     }
 }

@@ -21,6 +21,6 @@ For Claude Code: `integrations/install-claude-code.sh` turns it on for every ses
 
 The single circle tracks the whole task. It orbits while a step runs, draws a check and moves to the next number
 when the step ends, ripples once when everything is done, pulses amber when it needs you, and shakes red when it
-failed. Opening it shows the tasks one under another with their state. Directives ("Klavye ve fareye dokunma") show
+failed. Opening it shows the tasks one under another with their state. Directives ("Klavyeye ve trackpad'e dokunma") show
 only in the closed size, as their own capsule, while a task that drives that input is still ahead. The owner can press **Durdur** at any time,
 and the agent's next `presence` call then exits with code 3.

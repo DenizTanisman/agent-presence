@@ -62,7 +62,7 @@ internal object Overlay {
     private var focus: String? = null
     private var app: Context? = null
     private var wm: WindowManager? = null
-    private var root: LinearLayout? = null
+    private var root: GlowRoot? = null
     private var shape: String? = null
 
     /** Where the window is on screen, in pixels (null when nothing is shown): agents can avoid tapping there. */
@@ -163,17 +163,21 @@ internal object Overlay {
             orientation = LinearLayout.HORIZONTAL
             gravity = if (mode == Mode.EXPANDED) Gravity.TOP else Gravity.CENTER_VERTICAL
         }
-        row.addView(
-            when (mode) {
-                Mode.EXPANDED -> expanded(c, p)
-                Mode.COMPACT -> compact(c, p, beside.size)
-                Mode.MINIMAL -> circleChip(c, p, chip)
-            },
-        )
+        val main = when (mode) {
+            Mode.EXPANDED -> expanded(c, p)
+            Mode.COMPACT -> compact(c, p, beside.size)
+            Mode.MINIMAL -> circleChip(c, p, chip)
+        }
+        row.addView(main)
+        // Each session's own shape, for the alert glow.
+        val shapes = ArrayList<Pair<Session, View>>()
+        shapes += p to main
         for (o in beside) {
-            row.addView(circleChip(c, o, chip), LinearLayout.LayoutParams(chip, chip).apply {
+            val v = circleChip(c, o, chip)
+            row.addView(v, LinearLayout.LayoutParams(chip, chip).apply {
                 marginStart = dp(c, if (mode == Mode.MINIMAL) 6 else 8)
             })
+            shapes += o to v
         }
         // Minimal: the first circle is the window's left edge, so place() can centre it under the camera.
         r.addView(row, LinearLayout.LayoutParams(WRAP, WRAP).apply {
@@ -184,9 +188,11 @@ internal object Overlay {
             val small = dp(c, 40)
             val line = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL }
             for ((k, o) in below.withIndex()) {
-                line.addView(circleChip(c, o, small), LinearLayout.LayoutParams(small, small).apply {
+                val v = circleChip(c, o, small)
+                line.addView(v, LinearLayout.LayoutParams(small, small).apply {
                     if (k > 0) marginStart = dp(c, 8)
                 })
+                shapes += o to v
             }
             r.addView(line, LinearLayout.LayoutParams(WRAP, WRAP).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -209,7 +215,24 @@ internal object Overlay {
             caps += v
         }
 
-        place(c, r, mode, chip)
+        // The alert glow (SPEC §4): waiting pulses amber, failed glows red, done glows green; nothing while running.
+        r.radius = dpf(c, 14f)
+        r.glows = shapes.mapNotNull { (s, v) ->
+            val color = when (s.phase) {
+                Phase.WAITING -> Palette.AMBER
+                Phase.FAILED -> Palette.RED
+                Phase.DONE -> Palette.GREEN
+                Phase.RUNNING -> return@mapNotNull null
+            }
+            val corner = when {
+                v !== main || mode == Mode.MINIMAL -> -1f
+                mode == Mode.EXPANDED -> dpf(c, 28f)
+                else -> dpf(c, 24f)
+            }
+            GlowRoot.Glow(v, color, pulse = s.phase == Phase.WAITING, corner = corner)
+        }
+
+        place(c, r, mode, chip, glowing = r.glows.isNotEmpty())
 
         val now = "${p.id}/$mode/${others.size}/${held.joinToString { it.id }}"
         if (now != shape) {
@@ -258,7 +281,7 @@ internal object Overlay {
         return cut?.boundingRectTop?.takeIf { !it.isEmpty }
     }
 
-    private fun ensureWindow(c: Context): LinearLayout? {
+    private fun ensureWindow(c: Context): GlowRoot? {
         root?.let { return it }
         val manager = c.getSystemService(WindowManager::class.java)
         val lp = WindowManager.LayoutParams(
@@ -273,7 +296,7 @@ internal object Overlay {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             title = "AgentPresence"
         }
-        val v = LinearLayout(c).apply {
+        val v = GlowRoot(c).apply {
             orientation = LinearLayout.VERTICAL
             clipToPadding = false
             clipChildren = false
@@ -290,31 +313,35 @@ internal object Overlay {
      * Minimal: right under the camera hole, centred on it (or, with [minimalInStatusBar], beside it in the band).
      * Expanded and compact: top centre, under the status bar. Without a camera hole: top centre.
      */
-    private fun place(c: Context, r: LinearLayout, mode: Mode, chip: Int) {
+    private fun place(c: Context, r: LinearLayout, mode: Mode, chip: Int, glowing: Boolean) {
         val lp = r.layoutParams as? WindowManager.LayoutParams ?: return
         val top = insetsTop(c)
+        // A glow needs room around its shape inside the window, or the window edge cuts it off. The window moves
+        // back by the same amount, so the shapes stay exactly where they are.
+        val room = if (glowing) dp(c, 18) else 0
         val gx: Int
         val gy: Int
         val gravity: Int
         if (mode == Mode.MINIMAL) {
-            r.setPadding(0, 0, 0, dp(c, 2))
+            r.setPadding(room, room, room, room + dp(c, 2))
             val cam = camera(c)
             val gap = dp(c, 8)
             gravity = Gravity.TOP or Gravity.START
             val centreX = cam?.centerX() ?: (c.resources.displayMetrics.widthPixels / 2)
             if (minimalInStatusBar) {
-                gx = if (cam != null) cam.right + gap else centreX + dp(c, 24)
-                gy = if (cam != null) (cam.centerY() - chip / 2).coerceAtLeast(0) else ((top - chip) / 2).coerceAtLeast(0)
+                gx = (if (cam != null) cam.right + gap else centreX + dp(c, 24)) - room
+                gy = (if (cam != null) (cam.centerY() - chip / 2).coerceAtLeast(0) else ((top - chip) / 2).coerceAtLeast(0)) - room
             } else {
-                gx = centreX - chip / 2
-                gy = top + dp(c, 4)
+                gx = centreX - chip / 2 - room
+                gy = top + dp(c, 4) - room
             }
         } else {
-            val pad = dp(c, 6)
-            r.setPadding(pad, pad / 2, pad, pad)
+            val pad = maxOf(dp(c, 6), room)
+            val padTop = maxOf(dp(c, 3), room)
+            r.setPadding(pad, padTop, pad, pad)
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             gx = 0
-            gy = top + dp(c, 4) - pad / 2
+            gy = top + dp(c, 4) - padTop
         }
         // An app window that wraps its content is first measured at the system's preferred dialog width (about
         // 320 dp), and single-line text inside it then ellipsizes early instead of asking for more. So the width is

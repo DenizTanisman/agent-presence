@@ -41,14 +41,29 @@ final class ReducerTests: XCTestCase {
         Reducer.apply(ev(.start) {
             $0.steps = ["Aç", Step("Bul", uses: [.mouse]), Step("Yaz", uses: [.keyboard, .mouse]), "Kontrol"]
         }, to: &s, now: 1)
-        XCTAssertEqual(s[0].directives(tr: true).map(\.text), ["Klavye ve fareye dokunma"], "one later step is enough")
+        XCTAssertEqual(s[0].directives(tr: true).map(\.text), ["Klavyeye ve trackpad'e dokunma"], "one later step is enough")
         Reducer.apply(ev(.step) { $0.step = 3 }, to: &s, now: 2)
-        XCTAssertEqual(s[0].directives(tr: true).map(\.text), ["Klavye ve fareye dokunma"])
+        XCTAssertEqual(s[0].directives(tr: true).map(\.text), ["Klavyeye ve trackpad'e dokunma"])
         Reducer.apply(ev(.step), to: &s, now: 3)
         XCTAssertTrue(s[0].directives(tr: true).isEmpty, "gone once the last such step is finished")
         XCTAssertFalse(s[0].handsOff)
         Reducer.apply(ev(.start, "p") { $0.steps = ["a", "b"] }, to: &s, now: 4)
         XCTAssertFalse(s[1].handsOff, "plain steps: no directive, just the circle")
+    }
+
+    func testRepeatedWarningIsSaidOnce() {
+        var s: [Session] = []
+        Reducer.apply(ev(.start) {
+            $0.steps = [Step("Sürükle", uses: [.keyboard, .mouse], dont: ["Klavyeye dokunma"])]
+            $0.dont = ["Trackpad'e ve klavyeye dokunma", "Finder pencerelerini kapatma"]
+        }, to: &s, now: 1)
+        XCTAssertEqual(s[0].directives(tr: true).map(\.text), ["Klavyeye ve trackpad'e dokunma", "Finder pencerelerini kapatma"])
+        Reducer.apply(ev(.start, "p") {
+            $0.device = "phone"; $0.steps = [Step("Dokun", uses: [.touch])]; $0.dont = ["Telefona dokunma", "Kabloya dokunma"]
+        }, to: &s, now: 2)
+        XCTAssertEqual(s[1].directives(tr: true).map(\.text), ["Ekrana dokunma", "Kabloya dokunma"])
+        Reducer.apply(ev(.start, "q") { $0.dont = ["Trackpad'e dokunma"] }, to: &s, now: 3)
+        XCTAssertEqual(s[2].directives(tr: true).map(\.text), ["Trackpad'e dokunma"], "without tags the hand-written one stays")
     }
 
     func testWaitingSetsDirectivesAside() {

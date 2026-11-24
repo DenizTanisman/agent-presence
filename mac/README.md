@@ -13,7 +13,7 @@ work is still running.
 - **Expanded** is the task list: every task one under another with its state (Bitti / Sürüyor / Sırada /
   Seni bekliyor / Olmadı), and **Durdur / Küçült** (or **Kapat** once done). No directives here.
 - **Directives only in the closed size**, in their own capsule under the island. If even one task still to come drives
-  the keyboard or the mouse, the capsule says "Klavye ve fareye dokunma" until that task is finished. With no such
+  the keyboard or the mouse, the capsule says "Klavyeye ve trackpad'e dokunma" until that task is finished. With no such
   task, the island rests as just the circle.
 - **Done stays.** After the announcement, a green check remains beside the notch until you click it away.
 - Several sessions at once: the extra ones sit beside the island as small circles. A session mirrored from a phone

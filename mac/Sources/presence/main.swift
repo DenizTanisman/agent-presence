@@ -304,7 +304,7 @@ func parseStep(_ raw: String) -> Step {
     for tok in inside.split(whereSeparator: { $0 == "," || $0 == "+" }).map({ $0.trimmingCharacters(in: .whitespaces) }) where !tok.isEmpty {
         switch tok.lowercased() {
         case "klavye", "keyboard", "keys": uses.append(.keyboard)
-        case "fare", "mouse", "mause": uses.append(.mouse)
+        case "fare", "mouse", "mause", "trackpad", "imleç": uses.append(.mouse)
         case "ekran", "dokunma", "touch", "screen": uses.append(.touch)
         default: dont.append(tok)
         }
@@ -504,7 +504,7 @@ case "auto":
         let tr = isTurkish()
         e.app = device == "mac" ? "Mac" : (tr ? "Telefon" : "Phone")
         e.title = device == "mac" ? (tr ? "Mac'i kullanıyor" : "Using your Mac") : (tr ? "Telefonu kullanıyor" : "Using your phone")
-        e.dont = [device == "mac" ? (tr ? "Klavye ve fareye dokunma" : "Don't touch the keyboard or mouse")
+        e.dont = [device == "mac" ? (tr ? "Klavyeye ve trackpad'e dokunma" : "Don't touch the keyboard or trackpad")
                                   : (tr ? "Ekrana dokunma" : "Don't touch the screen")]
         e.detail = doing
         deliver([e], to: show, args: a)
