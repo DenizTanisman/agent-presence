@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 Live Updates (promoted ongoing notifications). -->
+    <uses-permission
+        android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"
+        tools:ignore="UnknownPermission" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application>
+        <service
+            android:name="dev.deniz.agentpresence.PresenceService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows the owner, over other apps, that an AI agent is operating this phone right now: what it does, which step it is on and what the owner must not touch." />
+        </service>
+
+        <receiver
+            android:name="dev.deniz.agentpresence.ActionReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

@@ -1,0 +1,13 @@
+.DS_Store
+# Mac
+mac/.build/
+mac/dist/
+mac/.swiftpm/
+# Android
+android/.gradle/
+android/.kotlin/
+android/build/
+android/*/build/
+android/local.properties
+android/.idea/
+*.apk
