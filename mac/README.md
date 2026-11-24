@@ -13,10 +13,11 @@ work is still running.
 
 - **One circle tracks the whole task.** It orbits while a step runs, draws a check when the step ends and slides the
   next number in. One ripple means done. An amber pulse means it needs you, and a red shake means it failed.
-- **Expanded** is the task list: every task one under another with its state (Bitti / Sürüyor / Sırada /
-  Seni bekliyor / Olmadı), and **Durdur / Küçült** (or **Kapat** once done). No directives here.
+- **Expanded** is the task list: every task one under another with its state (Done / Running / Next /
+  Needs you / Failed; in Turkish Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı), and **Stop / Minimize**
+  (**Durdur / Küçült**; once done **Close**, **Kapat**). No directives here.
 - **Directives only in the closed size**, in their own capsule under the island. If even one task still to come drives
-  the keyboard or the mouse, the capsule says "Klavyeye ve trackpad'e dokunma" until that task is finished. With no such
+  the keyboard or the mouse, the capsule says "Don't touch the keyboard or trackpad" ("Klavyeye ve trackpad'e dokunma") until that task is finished. With no such
   task, the island rests as just the circle.
 - **Done stays.** After the announcement, a green check remains beside the notch until you click it away.
 - Several sessions at once: the extra ones sit beside the island as small circles. A session mirrored from a phone
@@ -37,19 +38,19 @@ Requires macOS 14+ and Swift 6. The app starts by itself on the first `presence`
 ## CLI (what an agent calls)
 
 ```sh
-presence start "Çalma listesine şarkı ekliyor" --app Spotify \
-  --steps "Spotify'ı aç [klavye,fare]|Listeyi bul|Şarkıları ekle [klavye,fare]|Kontrol et"
+presence start "Adding songs to a playlist" --app Spotify \
+  --steps "Open Spotify [keyboard,mouse]|Find the playlist|Add the songs [keyboard,mouse]|Check"
 presence step            # next step (or: presence step 3 --detail 3/10)
-presence wait "Spotify giriş istiyor: şifreni sen yaz"   # needs you: stays open, plays a sound
+presence wait "Spotify wants a login: please type your password"   # needs you: stays open, plays a sound
 presence resume
-presence done "10 şarkı eklendi"   # or: presence fail "neden"
+presence done "Added 10 songs"   # or: presence fail "why"
 presence end             # remove it now
 ```
 
 - `--on phone` drives an Android phone: the event goes over adb to the [Android host](../android) and is also
   shown here as progress, with a phone badge and without its "don't touch" (`--no-mirror` keeps it on the phone).
   Mac work stays on the Mac.
-- **Exit code 3** means the owner pressed **Durdur**. The agent must stop, then send `done` or `fail`.
+- **Exit code 3** means the owner pressed **Stop** (**Durdur**). The agent must stop, then send `done` or `fail`.
 - `presence status`, `presence snapshot out.png` (renders the island, no screen permission needed),
   `presence send '<raw json>'`, `presence config language tr|en|auto`, `presence config sound on|off`.
 

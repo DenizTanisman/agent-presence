@@ -19,25 +19,25 @@ The protocol and the look are shared with the Mac library: see [`../SPEC.md`](..
 
 | | |
 |---|---|
-| **Expanded** | for 5 s when the agent starts, intervenes, adds a directive, finishes or fails; 8 s after a tap; sticky while it needs you. `agent · app`, title, then the tasks **one under another**: status circle, task, status word (Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı). The attention or fail message sits under its task, the done message under the title. **Durdur / Küçült** (finished: **Kapat**). No directives here. |
+| **Expanded** | for 5 s when the agent starts, intervenes, adds a directive, finishes or fails; 8 s after a tap; sticky while it needs you. `agent · app`, title, then the tasks **one under another**: status circle, task, status word (Done / Running / Next / Needs you / Failed; in Turkish: Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı). The attention or fail message sits under its task, the done message under the title. **Stop / Minimize** (**Durdur / Küçült**; finished: **Close**, **Kapat**). No directives here. |
 | **Compact** | top centre: step circle, the target app's real icon, app and step, the one critical datum. The resting size while a directive is active, with the directives in a **separate capsule** under it (a red badge with a raised hand for don'ts, a green one with a check for do's); also 3 s after a step change. |
 | **Minimal** | just the circle, **right under the camera hole**. The resting size of everything else, done (green check) and failed (red cross) too until tapped. A second session gets its own small circle next to it; more than that, and they get a row of their own so the card never shrinks. |
 
 Directives are computed (SPEC "Directives on screen"): a step may say which input the agent itself drives,
-`{"title":"Mesajı yaz","uses":["touch","keyboard"]}`. While any step that is not finished yet drives an input, the
-capsule says so ("Ekrana dokunma", "Klavyeye ve trackpad'e dokunma", ...), plus the steps' own `dont`, the session
+`{"title":"Write the message","uses":["touch","keyboard"]}`. While any step that is not finished yet drives an input, the
+capsule says so ("Don't touch the screen", "Don't touch the keyboard or trackpad", ...; in Turkish "Ekrana dokunma", "Klavyeye ve trackpad'e dokunma"), plus the steps' own `dont`, the session
 `dont` and `do`. A typed "don't" that only repeats a generated warning (one about the keyboard, trackpad or screen) is
 dropped, so each warning is said once. Nothing is shown while the agent waits for you or once it is over.
 
 **Warning first** (SPEC §2): whenever a session gets a directive it did not show a moment ago (start, intervene, a new
 `dont`/`do`, or `resume` bringing one back), a warning card comes first for 3 s: each directive on its own line in
-large type, under a red "Dokunma". Then the task list (start/intervene) or the resting size. While the agent itself
+large type, under a red "Hands off" ("Dokunma"). Then the task list (start/intervene) or the resting size. While the agent itself
 drives the phone's input, the card lets touches through (Android passes them only through a window that is at most
 80 % opaque, so the card is a little see-through for those 3 s); otherwise a tap on it opens the task list.
 
 **Never left blocked** (SPEC): an event may carry `"ttl"` (seconds). A running session that hears nothing for that long
-is finished by the phone itself ("Bitti, artık kullanabilirsin", the usual done announcement, then the green check),
-so a dropped adb link never leaves "Ekrana dokunma" on screen. A waiting session never expires; a later event
+is finished by the phone itself ("Done, you can use it now" / "Bitti, artık kullanabilirsin", the usual done announcement, then the green check),
+so a dropped adb link never leaves "Don't touch the screen" on screen. A waiting session never expires; a later event
 continues the session.
 
 **Hide** (SPEC "Edge glow while hidden"): only the agent can send `hide` (there is no button for it) when it must see or
@@ -61,19 +61,19 @@ its real icon is shown; otherwise a neutral rounded square. The lookup sees only
 intent for MAIN/LAUNCHER), not every package, and is cached per name.
 
 On Android 16+ the ongoing notification is a **Live Update** (`ProgressStyle`, one segment per step,
-`requestPromotedOngoing`, short critical text) with **Durdur / Göster** actions. Attention and the end of a task also vibrate.
+`requestPromotedOngoing`, short critical text) with **Stop / Show** (**Durdur / Göster**) actions. Attention and the end of a task also vibrate.
 
 ## From an app on the phone
 
 ```kotlin
 AgentPresence.send(context, PresenceEvent(
-    id = "t1", type = "start", app = "Ayarlar", title = "Wi-Fi ayarlarını kontrol ediyor",
-    steps = listOf(Step("Ayarları aç", uses = setOf("touch")), Step("Wi-Fi'ı bul"), Step("Ağı seç", uses = setOf("touch"))),
+    id = "t1", type = "start", app = "Settings", title = "Checking the Wi-Fi settings",
+    steps = listOf(Step("Open Settings", uses = setOf("touch")), Step("Find Wi-Fi"), Step("Pick the network", uses = setOf("touch"))),
 ))
 AgentPresence.send(context, PresenceEvent(id = "t1", type = "step"))
-AgentPresence.send(context, PresenceEvent(id = "t1", type = "done", message = "Bağlandı"))
+AgentPresence.send(context, PresenceEvent(id = "t1", type = "done", message = "Connected"))
 
-AgentPresence.onStopRequested = { session -> /* the owner tapped Durdur: stop */ }
+AgentPresence.onStopRequested = { session -> /* the owner tapped Stop: stop */ }
 val json = AgentPresence.state()   // {"v":1,"sessions":[{"id","phase","step","total","stopRequested",...}]}
 ```
 
@@ -87,9 +87,9 @@ adb install host/build/outputs/apk/debug/host-debug.apk
 adb shell appops set dev.deniz.agentpresence.host SYSTEM_ALERT_WINDOW allow
 adb shell pm grant dev.deniz.agentpresence.host android.permission.POST_NOTIFICATIONS
 
-tools/send.sh '{"v":1,"id":"t1","type":"start","app":"Spotify","steps":[{"title":"Aç","uses":["touch"]},"Bul","Ekle"]}'
+tools/send.sh '{"v":1,"id":"t1","type":"start","app":"Spotify","steps":[{"title":"Open","uses":["touch"]},"Find","Add"]}'
 tools/send.sh '{"v":1,"id":"t1","type":"step","detail":"3/10"}'
-tools/send.sh '{"v":1,"id":"t1","type":"done","message":"Liste hazır"}'
+tools/send.sh '{"v":1,"id":"t1","type":"done","message":"Playlist ready"}'
 tools/send.sh            # state only
 ```
 
@@ -129,7 +129,7 @@ the hole, anyway (the host app takes `--ez band true|false` on the same broadcas
 
 - Android hides app overlays on top of system Settings screens, permission dialogs and the install prompt;
   only the notification shows there.
-- On One UI 9 the Live Update is accepted (`PROMOTED_ONGOING`, segmented progress, Durdur/Göster) but no status bar
+- On One UI 9 the Live Update is accepted (`PROMOTED_ONGOING`, segmented progress, Stop/Show) but no status bar
   chip appeared, and the shade orders it among the other notifications. The lock-screen Now Bar was not tested.
 - On a pure black app the minimal circle's dark disc disappears into the background; the coloured circle stays visible.
 - Taps sent with `adb shell input tap` land on the card like a finger would.

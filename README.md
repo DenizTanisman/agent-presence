@@ -11,9 +11,9 @@ Two libraries with one look and one event format ([SPEC.md](SPEC.md)):
   ongoing / Live Update notification. Events arrive in-app or over adb from the Mac CLI.
 
 ```sh
-presence start "Kaydedilenleri topluyor" --on phone --app Instagram --steps "Aç [ekran]|Kaydedilenler|Bağlantıları al [ekran]"
+presence start "Collecting saved posts" --on phone --app Instagram --steps "Open [screen]|Saved|Copy the links [screen]"
 presence step
-presence done "42 bağlantı alındı"
+presence done "Got 42 links"
 ```
 
 For Claude Code: `integrations/install-claude-code.sh` turns it on for every session
@@ -21,6 +21,6 @@ For Claude Code: `integrations/install-claude-code.sh` turns it on for every ses
 
 The single circle tracks the whole task. It orbits while a step runs, draws a check and moves to the next number
 when the step ends, ripples once when everything is done, pulses amber when it needs you, and shakes red when it
-failed. Opening it shows the tasks one under another with their state. Directives ("Klavyeye ve trackpad'e dokunma") show
-only in the closed size, as their own capsule, while a task that drives that input is still ahead. The owner can press **Durdur** at any time,
+failed. Opening it shows the tasks one under another with their state. Directives ("Don't touch the keyboard or trackpad"; in Turkish "Klavyeye ve trackpad'e dokunma") show
+only in the closed size, as their own capsule, while a task that drives that input is still ahead. The owner can press **Stop** (**Durdur**) at any time,
 and the agent's next `presence` call then exits with code 3.

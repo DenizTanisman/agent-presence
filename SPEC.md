@@ -23,18 +23,18 @@ Every change is one event. Unknown fields are ignored; missing optional fields k
   "agent": "Claude",
   "app": "Spotify",
   "device": "mac",
-  "title": "Çalma listesine şarkı ekliyor",
+  "title": "Adding songs to a playlist",
   "steps": [
-    "Spotify'ı aç",
-    {"title": "Listeyi bul", "uses": ["mouse"]},
-    {"title": "Şarkıları ekle", "uses": ["keyboard", "mouse"]},
-    {"title": "Kontrol et", "dont": ["Spotify'ı kapatma"]}
+    "Open Spotify",
+    {"title": "Find the playlist", "uses": ["mouse"]},
+    {"title": "Add the songs", "uses": ["keyboard", "mouse"]},
+    {"title": "Check", "dont": ["Don't close Spotify"]}
   ],
   "step": 1,
   "detail": "3/10",
   "dont": [],
   "do": [],
-  "message": "Ödeme ekranında onayın gerekiyor",
+  "message": "The payment screen needs your approval",
   "ts": 1732451234567
 }
 ```
@@ -83,11 +83,11 @@ The **active directives** of a running session are computed, never typed twice:
 
 1. Union of `uses` over every step that is not finished yet (the current one and the ones after it). If even one
    remaining step drives the keyboard or the mouse, the warning shows. Generated text (the island lives on a
-   MacBook, so the pointer is the trackpad): keyboard + mouse → "Klavyeye ve trackpad'e dokunma",
-   keyboard → "Klavyeye dokunma", mouse → "Trackpad'e dokunma", touch → "Ekrana dokunma".
+   MacBook, so the pointer is the trackpad): keyboard + mouse → "Don't touch the keyboard or trackpad",
+   keyboard → "Don't type", mouse → "Don't touch the trackpad", touch → "Don't touch the screen" (Turkish texts in §5).
 2. Plus the `dont` of those remaining steps, plus the session `dont`, **except** a `dont` that only repeats a
    generated one: when a keyboard/mouse warning is generated, a `dont` mentioning klavye/keyboard, fare/mouse,
-   trackpad or imleç is dropped; when the touch warning is generated, one mentioning ekran/screen/telefon/phone is
+   trackpad or imleç (cursor) is dropped; when the touch warning is generated, one mentioning ekran/screen/telefon/phone is
    dropped. One warning is said once.
 3. Plus the session `do` (shown green).
 
@@ -119,7 +119,7 @@ taps and screenshots by the agent reach the app below. Mirrors on the other devi
 
 The end must reach the owner even when the agent goes quiet or the link to the phone drops (USB unplugged, Wi-Fi adb
 gone). A running session with a `ttl` that gets no event for `ttl` seconds is finished **by the host itself**: phase
-done, message "Bitti, artık kullanabilirsin" ("Done, you can use it now"), the usual done announcement (expanded 5 s,
+done, message "Done, you can use it now" ("Bitti, artık kullanabilirsin"), the usual done announcement (expanded 5 s,
 green glow, sound/vibration) and then the green check. A waiting session never expires (the owner must act). Any
 later event for that id simply continues it (a `step` makes it run again, with the warning card first if it has a
 directive). The CLI sends `ttl` 120 on `start`/`intervene` and 30 for the hook's automatic sessions; agents should
@@ -134,7 +134,7 @@ After each event the host returns (Android: broadcast result data, base64 JSON; 
 {"v":1,"sessions":[{"id":"claude-1","phase":"running","step":2,"total":4,"stopRequested":false,"acknowledged":false,"updated":1732451234567}]}
 ```
 
-`stopRequested` becomes true when the owner taps **Durdur**. The agent must check it (the CLI exits with code 3) and stop.
+`stopRequested` becomes true when the owner taps **Stop**. The agent must check it (the CLI exits with code 3) and stop.
 `phase` values: `running`, `waiting`, `done`, `failed`.
 
 ---
@@ -147,16 +147,16 @@ Three sizes of the same thing (Dynamic-Island vocabulary), plus a warning card t
   may already have done what they must not). Whenever a session on this device gets a directive it did not show a
   moment ago (start, intervene, a new `dont`/`do`, or `resume` bringing a set-aside "don't" back), the island first
   opens as a **warning card** for **3 s**: header `app icon · agent · app` and, on the right, the red word
-  "Dokunma"; then each directive on its own line in large type (17 semibold) with its 32 pt gradient disc (red hand
+  "Hands off" ("Dokunma"); then each directive on its own line in large type (17 semibold) with its 32 pt gradient disc (red hand
   for `dont`, green check for `do`); under them, secondary, the session title. Red glow. Only after that comes the
   expanded task list (5 s, for start/intervene) or the resting size (for the other cases). Without a directive the
   task list opens directly, as before. The warning card is click-through while the agent drives the input.
 
-- **Expanded**: header (`agent · app`, `Adım x/n` or status), title, then **the tasks one under another**: each row is a
+- **Expanded**: header (`agent · app`, `Step x of n` or status), title, then **the tasks one under another**: each row is a
   small status circle (done ✓ green / active orbit blue / pending grey number / waiting amber ! / failed red ✕), the task
-  title, and its status word on the right (Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı). The `attention` or `fail`
-  message sits under the row it belongs to; the `done` message under the title. Then buttons **Durdur** and **Küçült**
-  (done/failed: **Kapat**). **No directives, no horizontal stepper** here. Without steps the list is one row: the title.
+  title, and its status word on the right (Done / Running / Next / Needs you / Failed). The `attention` or `fail`
+  message sits under the row it belongs to; the `done` message under the title. Then buttons **Stop** and **Minimize**
+  (done/failed: **Close**). **No directives, no horizontal stepper** here. Without steps the list is one row: the title.
 - **Compact**: one line: left = the step circle + app, right = the critical datum (`detail`, else `step/total`). The active
   directives sit in a **separate capsule under the pill** (a gap between them, dark red; `do` items green). A directive
   never leaves the screen while it is active.
@@ -183,7 +183,7 @@ Mode rules (both platforms):
 | attention (waiting) | Expanded, sticky | Expanded, sticky |
 | done / failed after the 5 s | Minimal (green check / red x), stays until tapped | Minimal (green check / red x), stays until tapped |
 | tap on minimal or compact | Expanded (until tapped again or 8 s without hover) | Expanded (until tapped again or 8 s) |
-| owner taps Kapat on done/failed | session removed | session removed |
+| owner taps Close on done/failed | session removed | session removed |
 
 ---
 
@@ -224,12 +224,12 @@ colors on both.
   icon (hand raised / checkmark). Text `#F5F5F7` 13.5 semibold. Several directives: one capsule each, stacked
   (gap 5), like the lines of the warning card.
 - **Status badges** in the task list: capsule, 11.5 semibold, padding 8×3, fill = accent at 16 %, text = accent
-  text color. Words: Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı.
+  text color. Words: Done / Running / Next / Needs you / Failed (Turkish in §5).
 - **Task rows.** 20 pt status circle, title 13.5 (active row semibold `#F5F5F7`, done `#C7C7CC`, pending `#8E8E93`),
   badge on the right. The active row has a left-to-right gradient of its accent at 14 % → 0, radius 12.
-- **Buttons.** Capsules, height 30, 12.5 semibold, leading SF Symbol / vector icon: **Durdur** (`stop.fill`) red at
-  18 % fill with red text; **Küçült** (`chevron.up`) and **Kapat** (`xmark`) white at 10 % with `#F5F5F7` text;
-  **Tamam** (`checkmark`) amber fill with black text.
+- **Buttons.** Capsules, height 30, 12.5 semibold, leading SF Symbol / vector icon: **Stop** (`stop.fill`) red at
+  18 % fill with red text; **Minimize** (`chevron.up`) and **Close** (`xmark`) white at 10 % with `#F5F5F7` text;
+  **OK** (`checkmark`) amber fill with black text.
 - **Glow.** Every alert glows in its accent, like the directive capsule: the island/card while it waits for the owner
   (amber, softly pulsing 1.6 s), when it failed (red) and for the done announcement (green); the minimal circle too.
   Glow = shadow of the shape in the accent, 45 % opacity, radius 14 (pulse 30 % ↔ 60 %). Nothing glows while it
