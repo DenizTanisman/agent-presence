@@ -195,6 +195,14 @@ public struct Session: Codable, Equatable, Identifiable {
 
     /// Some directive is in force: the island must not shrink below compact.
     public var handsOff: Bool { !directives(tr: false).isEmpty }
+
+    /// Directives belong to the device being driven. A mirror on the other device shows the progress, never the
+    /// "don't touch" (owner, 2026-11-24: a phone task must not tell him to keep off the Mac). nil host = anywhere.
+    public func handsOff(on host: String?) -> Bool { (host == nil || device == host) && handsOff }
+
+    public func directives(tr: Bool, on host: String?) -> [Directive] {
+        host == nil || device == host ? directives(tr: tr) : []
+    }
     public var isLive: Bool { phase == .running || phase == .waiting }
 }
 
@@ -300,10 +308,10 @@ public enum Reducer {
 
     /// The session the big island shows: one that needs the owner, else a live one with a "don't" (its directive must
     /// stay on screen), else the newest live one, else the newest.
-    public static func primary(_ sessions: [Session]) -> Session? {
+    public static func primary(_ sessions: [Session], host: String? = nil) -> Session? {
         if let w = sessions.last(where: { $0.phase == .waiting && !$0.acknowledged }) { return w }
         return sessions.max {
-            ($0.isLive ? 1 : 0, $0.handsOff ? 1 : 0, $0.updated) < ($1.isLive ? 1 : 0, $1.handsOff ? 1 : 0, $1.updated)
+            ($0.isLive ? 1 : 0, $0.handsOff(on: host) ? 1 : 0, $0.updated) < ($1.isLive ? 1 : 0, $1.handsOff(on: host) ? 1 : 0, $1.updated)
         }
     }
 }

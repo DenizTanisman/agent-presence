@@ -12,7 +12,7 @@ public final class IslandController {
     /// Show the island in screenshots and screen recordings. Off by default, so an agent that looks at the screen does
     /// not see (or click) it.
     public var capturable: Bool { didSet { panel.sharingType = capturable ? .readOnly : .none } }
-    public var host = "mac"
+    public var host = "mac" { didSet { store.host = host; layout() } }
 
     private let panel: Panel
     private var hits: [CGRect] = []

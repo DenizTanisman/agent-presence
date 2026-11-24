@@ -170,6 +170,15 @@ class ReducerTest {
         assertEquals(s, Session.fromJson(s!!.toJson()))
     }
 
+    @Test fun directivesOnlyOnTheDrivenDevice() {
+        val (mac, _) = run("""{"id":"m","type":"start","device":"mac","steps":[{"title":"Yaz","uses":["keyboard"]}]}""")
+        assertTrue("the Mac's own warning", mac!!.hasDirectivesOn("mac"))
+        assertFalse("a mirror on the phone shows progress only", mac.hasDirectivesOn("phone"))
+        val (phone, _) = run("""{"id":"p","type":"start","device":"phone","steps":[{"title":"Dokun","uses":["touch"]}]}""")
+        assertTrue(phone!!.hasDirectivesOn("phone"))
+        assertFalse(phone.hasDirectivesOn("mac"))
+    }
+
     // ---------------------------------------------------------------- v1.1: steps with uses, computed directives
 
     private val plan = """{"id":"p","type":"start","app":"Spotify","steps":[

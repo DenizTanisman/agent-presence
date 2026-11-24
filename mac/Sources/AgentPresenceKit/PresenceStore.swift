@@ -26,6 +26,8 @@ public final class PresenceStore: ObservableObject {
     @Published private var focusID: String?
 
     public var timing = Timing()
+    /// The device this store draws on: only its own sessions' directives are shown here.
+    public var host = "mac"
     public var sounds = true
     /// After every change (persist it, report it back).
     public var onChange: (([Session]) -> Void)?
@@ -48,7 +50,7 @@ public final class PresenceStore: ObservableObject {
             if let w = sessions.last(where: { $0.phase == .waiting && !$0.acknowledged }), w.id != s.id { return w }
             return s
         }
-        return Reducer.primary(sessions)
+        return Reducer.primary(sessions, host: host)
     }
 
     /// Every other session, each as its own small circle (newest first).
@@ -61,7 +63,7 @@ public final class PresenceStore: ObservableObject {
     public var interactive: Bool {
         guard let p = primary else { return false }
         if mode != .expanded { return true }
-        return !(reason == .announce && p.phase == .running && p.handsOff)
+        return !(reason == .announce && p.phase == .running && p.handsOff(on: host))
     }
 
     // MARK: events
@@ -153,7 +155,7 @@ public final class PresenceStore: ObservableObject {
     public func idleMode(_ s: Session) -> Mode {
         switch s.phase {
         case .waiting: return s.acknowledged ? .compact : .expanded
-        case .running: return s.handsOff ? .compact : .minimal
+        case .running: return s.handsOff(on: host) ? .compact : .minimal
         case .done, .failed: return .minimal
         }
     }
@@ -162,8 +164,8 @@ public final class PresenceStore: ObservableObject {
         revert?.cancel()
         revertDue = false
         // At rest a session whose "don't" is active takes the big island back, so its directive stays readable.
-        if let f = focusID, let s = sessions.first(where: { $0.id == f }), !s.handsOff,
-           sessions.contains(where: { $0.handsOff && $0.id != f }) {
+        if let f = focusID, let s = sessions.first(where: { $0.id == f }), !s.handsOff(on: host),
+           sessions.contains(where: { $0.handsOff(on: host) && $0.id != f }) {
             focusID = nil
         }
         guard let p = primary else { return }

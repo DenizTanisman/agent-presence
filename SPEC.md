@@ -79,6 +79,10 @@ The **active directives** of a running session are computed, never typed twice:
 2. Plus the `dont` of those remaining steps, plus the session `dont`.
 3. Plus the session `do` (shown green).
 
+Directives belong to the device being driven (`device`). A mirror on the other device shows the session's progress
+(circle, task list) but **never its directives**: a phone task never tells the owner to keep off the Mac, and a Mac task
+never puts "don't touch" on the phone.
+
 Nothing is active while the session waits for the owner (`attention`: they must act now) or once it is done/failed.
 Directives appear **only in the closed sizes** (compact capsule). The expanded view never shows them: it is the task list.
 When a session has no active directive, the idle island is just the minimal circle: it says "something is running" and
@@ -116,7 +120,7 @@ Three sizes of the same thing (Dynamic-Island vocabulary):
   then only the notification opens the task list). With two live sessions the second one falls to its own small circle next to the first.
 
 Which session gets the big island (the others are small circles): an unseen `attention` first, else a live session
-with an active directive (it must stay readable), else the newest live one, else the newest. An announcement
+with an active directive on this device (it must stay readable), else the newest live one, else the newest. An announcement
 may show another session for its 5 s; at rest the rule above wins again.
 
 Mode rules (both platforms):

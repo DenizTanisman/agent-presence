@@ -121,7 +121,7 @@ public struct IslandRoot: View {
     private func capsules(primary p: Session) -> [CapsuleItem] {
         var out: [CapsuleItem] = []
         for s in [p] + store.others {
-            let d = s.directives(tr: L.tr)
+            let d = s.directives(tr: L.tr, on: host)
             guard !d.isEmpty else { continue }
             let prefix = s.id == p.id ? "" : "\(s.app ?? s.agent): "
             let donts = d.filter { $0.kind == .dont }.map(\.text)

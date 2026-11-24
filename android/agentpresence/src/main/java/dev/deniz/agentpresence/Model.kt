@@ -197,6 +197,12 @@ data class Session(
     /** Something the owner must (not) do is in force: the compact pill and its capsule stay on screen. */
     val hasDirectives: Boolean get() = directives.isNotEmpty()
 
+    /** Directives belong to the device being driven. A mirror on the other device shows the progress, never the
+     *  "don't touch" (owner, 2026-11-24: a phone task must not tell him to keep off the Mac). */
+    fun directivesOn(here: String): List<Directive> = if (mirroredOn(here)) emptyList() else directives
+
+    fun hasDirectivesOn(here: String) = directivesOn(here).isNotEmpty()
+
     /** Label of the current step, if there is a plan. */
     val stepLabel: String? get() = steps.getOrNull(step - 1)?.title
 

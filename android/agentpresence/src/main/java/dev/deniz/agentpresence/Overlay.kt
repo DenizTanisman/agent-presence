@@ -124,17 +124,17 @@ internal object Overlay {
     fun primaryOf(list: List<Session>): Session? =
         list.filter { it.phase == Phase.WAITING && !it.acknowledged }.maxByOrNull { it.updated }
             ?: focus?.let { f -> list.firstOrNull { it.id == f && explicit[f] == Mode.EXPANDED } }
-            ?: list.filter { it.hasDirectives }.maxByOrNull { it.updated }
+            ?: list.filter { it.hasDirectivesOn(HERE) }.maxByOrNull { it.updated }
             ?: list.filter { it.live }.maxByOrNull { it.updated }
             ?: list.maxByOrNull { it.updated }
 
-    private fun restOf(s: Session) = if (s.hasDirectives) Mode.COMPACT else Mode.MINIMAL
+    private fun restOf(s: Session) = if (s.hasDirectivesOn(HERE)) Mode.COMPACT else Mode.MINIMAL
 
     private fun modeOf(s: Session): Mode {
         if (s.phase == Phase.WAITING && !s.acknowledged) return Mode.EXPANDED
         val m = explicit[s.id] ?: restOf(s)
         // A directive never leaves the screen: never smaller than compact while one is active.
-        return if (m == Mode.MINIMAL && s.hasDirectives) Mode.COMPACT else m
+        return if (m == Mode.MINIMAL && s.hasDirectivesOn(HERE)) Mode.COMPACT else m
     }
 
     fun render(ctx: Context) {
@@ -175,7 +175,7 @@ internal object Overlay {
 
         // Every active directive stays on screen: in the capsule under the pill. The expanded card is the task list
         // and never shows them, so while it is open the capsule of any other session still shows.
-        val held = list.filter { it.hasDirectives && !(it.id == p.id && mode == Mode.EXPANDED) }
+        val held = list.filter { it.hasDirectivesOn(HERE) && !(it.id == p.id && mode == Mode.EXPANDED) }
             .sortedBy { if (it.id == p.id) 0 else 1 }
         for (s in held) for (v in capsules(c, s, named = s.id != p.id)) {
             r.addView(v, LinearLayout.LayoutParams(WRAP, WRAP).apply {
@@ -413,7 +413,7 @@ internal object Overlay {
         s.phase == Phase.FAILED -> Strings.failed to Palette.RED
         !s.detail.isNullOrBlank() -> s.detail to Palette.TEXT
         s.total > 0 -> "${s.step}/${s.total}" to Palette.TEXT2
-        s.directives.any { !it.positive } -> "✋ ${Strings.handsOff}" to Palette.DONT_TEXT
+        s.directivesOn(HERE).any { !it.positive } -> "✋ ${Strings.handsOff}" to Palette.DONT_TEXT
         else -> "" to Palette.TEXT
     }
 
@@ -423,7 +423,7 @@ internal object Overlay {
      */
     private fun capsules(c: Context, s: Session, named: Boolean): List<View> {
         val who = if (named) (s.app ?: s.agent) + ": " else ""
-        val (donts, dos) = s.directives.partition { !it.positive }
+        val (donts, dos) = s.directivesOn(HERE).partition { !it.positive }
         val out = ArrayList<View>()
         if (donts.isNotEmpty()) out += capsule(c, donts.joinToString("\n") { "✋  $who${it.text}" }, Palette.DONT_BG, Palette.DONT_TEXT, 0x40FFB4AB, s)
         if (dos.isNotEmpty()) out += capsule(c, dos.joinToString("\n") { "✓  $who${it.text}" }, Palette.DO_BG, Palette.DO_TEXT, 0x40A7F3C0, s)

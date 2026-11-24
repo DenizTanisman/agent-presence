@@ -183,7 +183,7 @@ internal object Notifier {
         // The computed directives (SPEC "Directives on screen"), only while the agent is running.
         val lines = buildList {
             add(text)
-            for (d in s.directives) add(if (d.positive) "✓ ${d.text}" else "✋ ${d.text}")
+            for (d in s.directivesOn("phone")) add(if (d.positive) "✓ ${d.text}" else "✋ ${d.text}")
         }
         b.setContentTitle(
             when (s.phase) {

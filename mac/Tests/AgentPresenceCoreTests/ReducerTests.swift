@@ -88,6 +88,17 @@ final class ReducerTests: XCTestCase {
         XCTAssertEqual(Reducer.primary(s)?.id, "mac", "a finished one gives way to a live one")
     }
 
+    func testDirectivesOnlyOnTheDrivenDevice() {
+        var s: [Session] = []
+        Reducer.apply(ev(.start, "p") { $0.device = "phone"; $0.steps = [Step("Dokun", uses: [.touch])] }, to: &s, now: 1)
+        Reducer.apply(ev(.start, "m") { $0.device = "mac"; $0.steps = ["Bak"] }, to: &s, now: 2)
+        XCTAssertTrue(s[0].handsOff(on: "phone"))
+        XCTAssertFalse(s[0].handsOff(on: "mac"), "a phone task does not tell you to keep off the Mac")
+        XCTAssertTrue(s[0].directives(tr: true, on: "mac").isEmpty)
+        XCTAssertEqual(Reducer.primary(s, host: "mac")?.id, "m", "on the Mac the phone task is just progress")
+        XCTAssertEqual(Reducer.primary(s, host: "phone")?.id, "p")
+    }
+
     func testNewStartClearsFinishedOnes() {
         var s: [Session] = []
         Reducer.apply(ev(.start, "a"), to: &s, now: 1)
