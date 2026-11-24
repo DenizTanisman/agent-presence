@@ -30,7 +30,7 @@ presence: tell the owner what the agent is doing on their Mac or phone.
   presence snapshot <file.png>                     draw what the Mac island shows now (no screen permission needed)
 
 Options: --id ID (default: the last session this agent started), --agent NAME (default Claude), --on mac|phone (device
-being driven; every session also shows on the other device when it is reachable, unless --no-mirror), --serial S
+being driven; phone work is also shown on the Mac unless --no-mirror, Mac work stays on the Mac), --serial S
 (adb device), --owner ID (agent session; default $CLAUDE_CODE_SESSION_ID).
 Exit codes: 0 ok, 2 usage, 3 the owner pressed Stop (stop now), 4 no display could be reached.
 """
@@ -312,7 +312,6 @@ func parseStep(_ raw: String) -> Step {
     return Step(text, uses: uses, dont: dont)
 }
 
-/// Every session shows on both devices: the driven one first, the other as a mirror (unless --no-mirror).
 func isTurkish() -> Bool {
     (UserDefaults(suiteName: PresencePaths.bundleID)?.string(forKey: "language") ?? Locale.preferredLanguages.first ?? "")
         .hasPrefix("tr")
@@ -333,8 +332,10 @@ func toolWord(_ tool: String?, device: String) -> String {
     return w("çalışıyor", "working")
 }
 
+/// Where a session shows (SPEC "Which device shows a session"): phone work also on the Mac (the owner sits there),
+/// Mac work only on the Mac. --no-mirror keeps phone work on the phone.
 func targets(device: String, a: Args) -> [String] {
-    a.flags.contains("no-mirror") ? [device] : [device, device == "mac" ? "phone" : "mac"]
+    device == "phone" && !a.flags.contains("no-mirror") ? ["phone", "mac"] : [device]
 }
 
 // MARK: commands
@@ -349,12 +350,12 @@ func session() -> (id: String, show: [String]) {
     let reg = Registry.load()
     if let id = a.one("id") {
         if let on = a.one("on") { return (id, targets(device: on, a: a)) }
-        return (id, reg.sessions[id]?.show ?? ["mac", "phone"])
+        return (id, reg.sessions[id]?.show ?? ["mac"])
     }
     guard let id = reg.currentID(owner: ownerID(a)) else {
         fail("no session yet: run `presence start` first (or pass --id)")
     }
-    return (id, reg.sessions[id]?.show ?? ["mac", "phone"])
+    return (id, reg.sessions[id]?.show ?? ["mac"])
 }
 
 switch a.command {

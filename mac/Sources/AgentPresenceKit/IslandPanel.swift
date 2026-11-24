@@ -119,7 +119,13 @@ public final class IslandController {
         .clipped()
         let r = ImageRenderer(content: view)
         r.scale = 2
-        guard let cg = r.cgImage,
+        r.colorMode = .nonLinear
+        // App icons can push the renderer into an HDR (PQ) space: draw the result into plain 8-bit sRGB.
+        guard let raw = r.cgImage, let srgb = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: raw.width, height: raw.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: srgb, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        ctx.draw(raw, in: CGRect(x: 0, y: 0, width: raw.width, height: raw.height))
+        guard let cg = ctx.makeImage(),
               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: url, options: .atomic)) != nil
     }

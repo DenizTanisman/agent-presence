@@ -216,7 +216,7 @@ struct CompactBody: View {
     var body: some View {
         if geo.hasNotch {
             HStack(spacing: 0) {
-                left.frame(width: wing, alignment: .leading).padding(.leading, 12)
+                left.frame(width: wing, alignment: .leading).padding(.leading, 11)
                 Spacer(minLength: geo.notchWidth - 24)
                 right.frame(width: wing, alignment: .trailing).padding(.trailing, 14)
             }
@@ -236,8 +236,10 @@ struct CompactBody: View {
         HStack(spacing: 7) {
             StepDot(phase: s.phase, number: s.hasSteps ? s.step : nil, size: geo.hasNotch ? min(geo.barHeight - 13, 20) : 22,
                     badge: badge)
+            AppBadge(name: s.app, size: 17)
             Text(s.app ?? s.agent)
                 .font(.system(size: 12.5, weight: .semibold))
+                .tracking(-0.1)
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
         }
@@ -245,15 +247,15 @@ struct CompactBody: View {
 
     @ViewBuilder private var right: some View {
         if s.stopRequested && s.isLive {
-            Label(L.stopping, systemImage: "stop.circle.fill").labelStyle(Tight(color: Theme.amber))
+            Label(L.stopping, systemImage: "stop.fill").labelStyle(Tight(color: Theme.amberText))
         } else {
             switch s.phase {
-            case .waiting: Label(L.waiting, systemImage: "bell.fill").labelStyle(Tight(color: Theme.amber))
-            case .done: Label(L.done, systemImage: "checkmark").labelStyle(Tight(color: Theme.green))
-            case .failed: Label(L.failed, systemImage: "xmark").labelStyle(Tight(color: Theme.red))
+            case .waiting: Label(L.waiting, systemImage: "bell.fill").labelStyle(Tight(color: Theme.amberText))
+            case .done: Label(L.done, systemImage: "checkmark").labelStyle(Tight(color: Theme.greenText))
+            case .failed: Label(L.failed, systemImage: "xmark").labelStyle(Tight(color: Theme.redText))
             case .running:
                 Text(s.detail ?? (s.hasSteps ? "\(s.step)/\(s.total)" : L.running))
-                    .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(Theme.blueText)
                     .lineLimit(1)
                     .contentTransition(.numericText())
@@ -278,21 +280,39 @@ struct CapsuleItem: Hashable {
     var dont: Bool
 }
 
-/// A directive on its own, under the closed island: while it is in force it never leaves the screen.
+/// A directive on its own, under the closed island: near-black glass, an accent hairline and glow, the icon in a
+/// small gradient disc. While it is in force it never leaves the screen.
 struct DirectiveCapsule: View {
     var item: CapsuleItem
 
+    private var accent: Color { item.dont ? Theme.red : Theme.green }
+    private var gradient: LinearGradient {
+        LinearGradient(colors: item.dont ? [Color(hex: 0xFF5A4F), Color(hex: 0xE5332A)] : [Color(hex: 0x34D399), Color(hex: 0x16A34A)],
+                       startPoint: .top, endPoint: .bottom)
+    }
+
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: item.dont ? "hand.raised.fill" : "checkmark.circle.fill").font(.system(size: 12, weight: .bold))
-            Text(item.text).font(.system(size: 13, weight: .semibold)).lineLimit(2).multilineTextAlignment(.center)
+        HStack(spacing: 9) {
+            Image(systemName: item.dont ? "hand.raised.fill" : "checkmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(gradient))
+                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+            Text(item.text)
+                .font(.system(size: 13.5, weight: .semibold))
+                .tracking(-0.15)
+                .foregroundStyle(Theme.text)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
-        .foregroundStyle(item.dont ? Theme.dontText : Theme.doText)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(Capsule(style: .continuous).fill(item.dont ? Theme.dontFill : Theme.doFill))
-        .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+        .padding(.leading, 7)
+        .padding(.trailing, 15)
+        .frame(minHeight: 36)
+        .background(Capsule(style: .continuous).fill(Theme.capsule))
+        .overlay(Capsule(style: .continuous).strokeBorder(accent.opacity(0.4), lineWidth: 1))
+        .shadow(color: accent.opacity(0.25), radius: 10)
+        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -320,18 +340,19 @@ struct ExpandedBody: View {
 
             // Without a plan the single task row says it all; with one, the title heads the list.
             if s.hasSteps {
-            HStack(alignment: .center, spacing: 12) {
-                StepDot(phase: s.phase, number: s.hasSteps ? s.step : nil, size: 32, badge: badge)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(s.title.isEmpty ? (s.app ?? s.agent) : s.title)
-                        .font(.system(size: 14.5, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    subtitle
+                HStack(alignment: .center, spacing: 12) {
+                    StepDot(phase: s.phase, number: s.step, size: 32, badge: badge)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.title.isEmpty ? (s.app ?? s.agent) : s.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .tracking(-0.2)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        subtitle
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-            }
             }
 
             TaskList(s: s)
@@ -343,7 +364,8 @@ struct ExpandedBody: View {
     }
 
     private var who: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 7) {
+            AppBadge(name: s.app, size: 20)
             if let badge {
                 Image(systemName: badge == "phone" ? "smartphone" : "laptopcomputer").font(.system(size: 10.5, weight: .semibold))
             }
@@ -360,30 +382,30 @@ struct ExpandedBody: View {
     private var where_: some View {
         Group {
             switch s.phase {
-            case .done: Text(L.done).foregroundStyle(Theme.green)
-            case .failed: Text(L.failed).foregroundStyle(Theme.red)
-            case .waiting: Text(L.waiting).foregroundStyle(Theme.amber)
+            case .done: Text(L.done).foregroundStyle(Theme.greenText)
+            case .failed: Text(L.failed).foregroundStyle(Theme.redText)
+            case .waiting: Text(L.waiting).foregroundStyle(Theme.amberText)
             case .running:
                 Text(s.hasSteps ? L.stepOf(s.step, s.total) : L.running).foregroundStyle(Theme.blueText)
             }
         }
-        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+        .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
         .lineLimit(1)
     }
 
     /// Under the title: only what belongs to the whole task (the attention/fail text sits under its own task row).
     @ViewBuilder private var subtitle: some View {
         let line: (String, Color)? = {
-            if s.stopRequested && s.isLive { return (L.stopping, Theme.amber) }
+            if s.stopRequested && s.isLive { return (L.stopping, Theme.amberText) }
             switch s.phase {
-            case .done: return (s.message ?? L.done, Theme.green)
+            case .done: return (s.message ?? L.done, Theme.greenText)
             case .running: return s.detail.map { ($0, Theme.secondary) }
-            case .waiting, .failed: return s.hasSteps ? nil : s.message.map { ($0, Theme.accent(s.phase)) }
+            case .waiting, .failed: return nil
             }
         }()
         if let line {
             Text(line.0)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(line.1)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -395,20 +417,16 @@ struct ExpandedBody: View {
             Spacer()
             switch s.phase {
             case .done, .failed:
-                PillButton(title: L.close, tint: .white.opacity(0.14), text: .white) { store.close(s.id) }
+                PillButton(title: L.close, icon: "xmark", style: .neutral) { store.close(s.id) }
             case .waiting:
-                if !s.stopRequested {
-                    PillButton(title: L.stop, tint: Theme.dontFill, text: Theme.dontText) { store.stop(s.id) }
-                }
-                PillButton(title: L.ok, tint: Theme.amber, text: .black) { store.minimize() }
+                if !s.stopRequested { PillButton(title: L.stop, icon: "stop.fill", style: .stop) { store.stop(s.id) } }
+                PillButton(title: L.ok, icon: "checkmark", style: .ok) { store.minimize() }
             case .running:
-                if !s.stopRequested {
-                    PillButton(title: L.stop, tint: Theme.dontFill, text: Theme.dontText) { store.stop(s.id) }
-                }
+                if !s.stopRequested { PillButton(title: L.stop, icon: "stop.fill", style: .stop) { store.stop(s.id) } }
                 if nowMillis() - s.updated > 10 * 60_000 {
-                    PillButton(title: L.close, tint: .white.opacity(0.14), text: .white) { store.close(s.id) }
+                    PillButton(title: L.close, icon: "xmark", style: .neutral) { store.close(s.id) }
                 }
-                PillButton(title: L.minimize, tint: .white.opacity(0.14), text: .white) { store.minimize() }
+                PillButton(title: L.minimize, icon: "chevron.up", style: .neutral) { store.minimize() }
             }
         }
     }
@@ -450,8 +468,9 @@ struct TaskList: View {
                 row(number: nil, title: s.title.isEmpty ? (s.app ?? s.agent) : s.title, state: st)
             }
         }
-        .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.05)))
+        .padding(5)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.05), lineWidth: 0.5))
     }
 
     private func more(_ t: String) -> some View {
@@ -462,32 +481,46 @@ struct TaskList: View {
             .padding(.vertical, 3)
     }
 
+    private func accent(_ st: RowState) -> Color {
+        switch st {
+        case .done: Theme.green
+        case .active: s.stopRequested ? Theme.amber : Theme.blue
+        case .waiting: Theme.amber
+        case .failed: Theme.red
+        case .next, .skipped: Theme.pendingText
+        }
+    }
+
     @ViewBuilder private func row(number: Int?, title: String, state: RowState) -> some View {
         let current = state == .active || state == .waiting || state == .failed || (number == nil && state == .done)
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 10) {
                 mark(number, state).frame(width: 20, height: 20)
                 Text(title)
-                    .font(.system(size: 13, weight: current ? .semibold : .regular))
-                    .foregroundStyle(state == .next || state == .skipped ? Theme.secondary : (current ? Theme.text : Theme.text.opacity(0.75)))
+                    .font(.system(size: 13.5, weight: current ? .semibold : .regular))
+                    .tracking(-0.15)
+                    .foregroundStyle(current ? Theme.text : (state == .done ? Color(hex: 0xC7C7CC) : Theme.pendingText))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
-                word(state)
+                badge(state)
             }
             if let m = s.message, current || (!s.hasSteps && s.phase == .done),
                s.phase == .waiting || s.phase == .failed || (!s.hasSteps && s.phase == .done) {
                 Text(m)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.accent(s.phase))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.accentText(s.phase))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 30)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(current ? Color.white.opacity(0.07) : .clear))
-        .padding(.horizontal, 4)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LinearGradient(colors: [accent(state).opacity(current ? 0.14 : 0), accent(state).opacity(0)],
+                                     startPoint: .leading, endPoint: .trailing))
+        )
     }
 
     @ViewBuilder private func mark(_ n: Int?, _ st: RowState) -> some View {
@@ -510,35 +543,56 @@ struct TaskList: View {
         }
     }
 
-    @ViewBuilder private func word(_ st: RowState) -> some View {
-        let (t, c): (String, Color) = switch st {
-        case .done: (L.done, Theme.green)
-        case .active: s.stopRequested ? (L.stopping, Theme.amber) : (L.running, Theme.blueText)
-        case .next: (L.pending, Theme.pendingText)
-        case .waiting: (L.waiting, Theme.amber)
-        case .failed: (L.failed, Theme.red)
-        case .skipped: ("", .clear)
+    /// The status word as a small tinted pill.
+    @ViewBuilder private func badge(_ st: RowState) -> some View {
+        let (t, fill, text): (String, Color, Color) = switch st {
+        case .done: (L.done, Theme.green, Theme.greenText)
+        case .active: s.stopRequested ? (L.stopping, Theme.amber, Theme.amberText) : (L.running, Theme.blue, Theme.blueText)
+        case .next: (L.pending, Color.white, Theme.pendingText)
+        case .waiting: (L.waiting, Theme.amber, Theme.amberText)
+        case .failed: (L.failed, Theme.red, Theme.redText)
+        case .skipped: ("", .clear, .clear)
         }
-        Text(t).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(c).lineLimit(1)
+        if !t.isEmpty {
+            Text(t)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(text)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule(style: .continuous).fill(fill.opacity(st == .next ? 0.06 : 0.16)))
+                .lineLimit(1)
+        }
     }
 }
 
 struct PillButton: View {
+    enum Style { case stop, neutral, ok }
     var title: String
-    var tint: Color
-    var text: Color
+    var icon: String
+    var style: Style
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(text)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 6)
-                .background(Capsule(style: .continuous).fill(tint))
-                .contentShape(Capsule())
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 10.5, weight: .bold))
+                Text(title).font(.system(size: 12.5, weight: .semibold))
+            }
+            .foregroundStyle(style == .stop ? Theme.redText : (style == .ok ? Color.black : Theme.text))
+            .padding(.horizontal, 13)
+            .frame(height: 30)
+            .background(Capsule(style: .continuous).fill(fill))
+            .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(style == .neutral ? 0.06 : 0), lineWidth: 0.5))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private var fill: Color {
+        switch style {
+        case .stop: Theme.red.opacity(0.18)
+        case .neutral: Color.white.opacity(0.10)
+        case .ok: Theme.amber
+        }
     }
 }

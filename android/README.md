@@ -19,8 +19,8 @@ The protocol and the look are shared with the Mac library: see [`../SPEC.md`](..
 | | |
 |---|---|
 | **Expanded** | for 5 s when the agent starts, intervenes, adds a directive, finishes or fails; 8 s after a tap; sticky while it needs you. `agent · app`, title, then the tasks **one under another**: status circle, task, status word (Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı). The attention or fail message sits under its task, the done message under the title. **Durdur / Küçült** (finished: **Kapat**). No directives here. |
-| **Compact** | top centre: step circle, app and step, the one critical datum. The resting size while a directive is active, with the directives in a **separate capsule** under it (don'ts dark red, do's green); also 3 s after a step change. |
-| **Minimal** | just the circle, **right under the camera hole**. The resting size of everything else, done (✓) and failed (✕) too until tapped. A second session gets its own small circle next to it. |
+| **Compact** | top centre: step circle, the target app's real icon, app and step, the one critical datum. The resting size while a directive is active, with the directives in a **separate capsule** under it (a red badge with a raised hand for don'ts, a green one with a check for do's); also 3 s after a step change. |
+| **Minimal** | just the circle, **right under the camera hole**. The resting size of everything else, done (green check) and failed (red cross) too until tapped. A second session gets its own small circle next to it; more than that, and they get a row of their own so the card never shrinks. |
 
 Directives are computed (SPEC "Directives on screen"): a step may say which input the agent itself drives,
 `{"title":"Mesajı yaz","uses":["touch","keyboard"]}`. While any step that is not finished yet drives an input, the
@@ -30,6 +30,12 @@ Nothing is shown while the agent waits for you or once it is over.
 One circle tracks the whole task: an arc orbits it while the agent works; a check draws itself, then the next
 number slides in when a step is finished; a ripple goes out when it is done; an amber halo pulses while it waits
 for you; it shakes once on failure. Sessions driven on another device (`"device":"mac"`) carry a small laptop badge.
+
+The look follows SPEC §4 ("premium"): a `#0E0E10` card with a hairline, status badges, a gradient on the active
+task, capsule buttons with icons, and no emoji anywhere: the icons are Material Symbols Rounded paths (Apache 2.0)
+as vector drawables. When the target app is installed (a launcher app whose label matches `app`, case-insensitive),
+its real icon is shown; otherwise a neutral rounded square. The lookup sees only launcher activities (a `<queries>`
+intent for MAIN/LAUNCHER), not every package, and is cached per name.
 
 On Android 16+ the ongoing notification is a **Live Update** (`ProgressStyle`, one segment per step,
 `requestPromotedOngoing`, short critical text) with **Durdur / Göster** actions. Attention and the end of a task also vibrate.

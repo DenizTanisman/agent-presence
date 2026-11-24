@@ -43,9 +43,9 @@ presence done "10 şarkı eklendi"   # or: presence fail "neden"
 presence end             # remove it now
 ```
 
-- Every session shows on both devices: `--on phone` drives an Android phone (the event goes over adb to the
-  [Android host](../android) and is mirrored here with a phone badge); a Mac session is mirrored on the phone when
-  it is reachable. `--no-mirror` keeps it on one device.
+- `--on phone` drives an Android phone: the event goes over adb to the [Android host](../android) and is also
+  shown here as progress, with a phone badge and without its "don't touch" (`--no-mirror` keeps it on the phone).
+  Mac work stays on the Mac.
 - **Exit code 3** means the owner pressed **Durdur**. The agent must stop, then send `done` or `fail`.
 - `presence status`, `presence snapshot out.png` (renders the island, no screen permission needed),
   `presence send '<raw json>'`, `presence config language tr|en|auto`, `presence config sound on|off`.

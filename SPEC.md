@@ -68,6 +68,11 @@ Every change is one event. Unknown fields are ignored; missing optional fields k
 | `end` | remove the session now, no animation beyond fade. |
 | `expand` / `collapse` | UI control (tests, CLI). |
 
+### Which device shows a session
+
+A session driven on the **phone** shows on the phone and is mirrored on the Mac (the owner sits at the Mac while the
+agent works on the phone). A session driven on the **Mac** shows only on the Mac: the phone never shows Mac work.
+
 ### Directives on screen
 
 The **active directives** of a running session are computed, never typed twice:
@@ -154,13 +159,34 @@ One circle tracks the whole process instead of a long horizontal row. Base diame
 
 Mirror badge: a 12 px circle at the bottom-right of the big circle with a laptop or phone glyph.
 
-## 4. Colors and type
+## 4. Look (v1.2, "premium")
 
-- Surface: pure black `#000000` (Mac, merges with the notch); Android `#F2121214` with 1 px `#26FFFFFF` border (One UI dark card).
-- Text: primary `#FFFFFF`, secondary `#A1A1AA`.
-- Running blue `#3B82F6`, done green `#34C759`, waiting amber `#F5A524`, failed red `#FF453A`.
-- Directive rows: `dont` = `✋`/`⛔` + text on `#3A1515` with text `#FFB4AB`; `do` = `✓` + text on `#12301C` with text `#A7F3C0`.
-- Mac: SF Pro (system), 13 pt semibold header. Android: system font (Samsung One UI Sans), 15 sp bold header, radii 28 dp (One UI).
+No emoji anywhere: Mac uses SF Symbols, Android uses vector icons (Material Symbols Rounded paths). Same shapes and
+colors on both.
+
+- **Surfaces.** Mac island pure black `#000000` (merges with the notch). Android card `#0E0E10`, 1 px hairline
+  `#FFFFFF14`, radius 28 dp, soft shadow. Inner panels (the task list) `#FFFFFF0A`, radius 16.
+- **Type.** Mac: SF Pro; numbers and step digits SF Pro Rounded. Android: system font (One UI Sans). Title 15
+  semibold, tracking −0.2; secondary 13 regular `#9A9AA2`; small labels 11.5 semibold. White `#F5F5F7`, never pure
+  `#FFFFFF` text on black.
+- **Accents.** Running `#3B82F6` (text `#7AB8FF`), done `#30D158` (text `#4ADE80`), waiting `#FF9F0A`
+  (text `#FFB340`), failed `#FF453A` (text `#FF6961`), pending `#8E8E93`.
+- **App identity.** When the target app is found on the device (Mac: in /Applications, /System/Applications; Android:
+  a launcher app whose label matches `app`), its real icon is shown: 18 pt beside the circle in compact, 22 pt in
+  the expanded header. Otherwise a neutral glyph (Mac `app.fill`, Android a rounded square) in `#2C2C2E`.
+- **Directive capsule** (closed sizes only). Height 36, radius = height/2, background `#141416`, 1 px border in the
+  accent at 40 % (`dont` red, `do` green), a soft glow of the accent at 25 % (radius 10). Leading 22 pt circle filled
+  with the accent gradient (`#FF5A4F → #E5332A` for `dont`, `#34D399 → #16A34A` for `do`) holding a white 12 pt
+  icon (hand raised / checkmark). Text `#F5F5F7` 13.5 semibold. Several directives of one session: one capsule,
+  joined with " · ".
+- **Status badges** in the task list: capsule, 11.5 semibold, padding 8×3, fill = accent at 16 %, text = accent
+  text color. Words: Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı.
+- **Task rows.** 20 pt status circle, title 13.5 (active row semibold `#F5F5F7`, done `#C7C7CC`, pending `#8E8E93`),
+  badge on the right. The active row has a left-to-right gradient of its accent at 14 % → 0, radius 12.
+- **Buttons.** Capsules, height 30, 12.5 semibold, leading SF Symbol / vector icon: **Durdur** (`stop.fill`) red at
+  18 % fill with red text; **Küçült** (`chevron.up`) and **Kapat** (`xmark`) white at 10 % with `#F5F5F7` text;
+  **Tamam** (`checkmark`) amber fill with black text.
+- **Motion.** Springs (response 0.4, damping 0.82); capsules enter with scale 0.92 → 1 and fade.
 
 ## 5. UI strings (TR default, EN when the system language is not Turkish)
 

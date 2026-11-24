@@ -28,5 +28,5 @@ Claude itself drives during it; while any such task is still ahead, the closed i
 - When the owner pressed **Durdur**, the hook blocks the next screen-driving tool call and tells Claude to stop.
 - Sessions are tied to the Claude session (`session_id` / `$CLAUDE_CODE_SESSION_ID`), so several Claude sessions
   side by side each get their own and never close each other's.
-- Every session shows on both devices: on the one being driven, and mirrored on the other one when it is reachable
-  (the phone over adb). The hook needs `jq`; macOS ships it.
+- Phone work shows on the phone and, as progress only, on the Mac (the owner sits there). Mac work shows only on the
+  Mac. A "don't touch" appears only on the device being driven. The hook needs `jq`; macOS ships it.

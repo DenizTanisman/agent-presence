@@ -158,7 +158,7 @@ object AgentPresence {
         refresh(c)
     }
 
-    /** Kapat / ✕ on a finished session: it is gone. */
+    /** Kapat / the close button on a finished session: it is gone. */
     internal fun userClose(c: Context, id: String) {
         synchronized(lock) {
             sessions.remove(id)

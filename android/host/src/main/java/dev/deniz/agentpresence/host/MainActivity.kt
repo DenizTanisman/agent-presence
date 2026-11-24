@@ -64,11 +64,11 @@ class MainActivity : Activity() {
         val overlay = Settings.canDrawOverlays(this)
         val notif = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val promoted = if (Build.VERSION.SDK_INT >= 36) getSystemService(NotificationManager::class.java).canPostPromotedNotifications() else false
-        fun mark(b: Boolean) = if (b) "✓" else "✕"
+        fun mark(b: Boolean) = if (tr) (if (b) "açık" else "kapalı") else (if (b) "on" else "off")
         status.text = buildString {
-            append("${mark(overlay)}  ${if (tr) "Üstte gösterme" else "Overlay"}\n")
-            append("${mark(notif)}  ${if (tr) "Bildirim" else "Notifications"}\n")
-            append("${mark(promoted)}  Live Update")
+            append("${if (tr) "Üstte gösterme" else "Overlay"}: ${mark(overlay)}\n")
+            append("${if (tr) "Bildirim" else "Notifications"}: ${mark(notif)}\n")
+            append("Live Update: ${mark(promoted)}")
         }
     }
 

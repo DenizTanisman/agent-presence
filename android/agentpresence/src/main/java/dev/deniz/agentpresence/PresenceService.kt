@@ -180,10 +180,11 @@ internal object Notifier {
             Phase.DONE -> s.message ?: Strings.done
             Phase.FAILED -> s.message ?: Strings.failed
         }
-        // The computed directives (SPEC "Directives on screen"), only while the agent is running.
+        // The computed directives (SPEC "Directives on screen"), only while the agent is running. Plain words, no
+        // emoji (SPEC §4): "Spotify'ı aç · Ekrana dokunma".
         val lines = buildList {
             add(text)
-            for (d in s.directivesOn("phone")) add(if (d.positive) "✓ ${d.text}" else "✋ ${d.text}")
+            for (d in s.directivesOn("phone")) add(d.text)
         }
         b.setContentTitle(
             when (s.phase) {
@@ -193,7 +194,7 @@ internal object Notifier {
                 Phase.RUNNING -> name
             },
         )
-            .setContentText(lines.joinToString("  "))
+            .setContentText(lines.filter { it.isNotBlank() }.joinToString(" · "))
             .setWhen(s.started)
             .setColor(color(s))
             .setOngoing(s.live)

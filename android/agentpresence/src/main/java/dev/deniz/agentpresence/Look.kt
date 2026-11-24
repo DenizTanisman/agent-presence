@@ -2,40 +2,51 @@ package dev.deniz.agentpresence
 
 import java.util.Locale
 
-/** Colors from SPEC §3–4. */
+/** Colors from SPEC §3–4 (v1.2 "premium" look). */
 internal object Palette {
-    // SPEC says #F2121214; on the phone bright text behind the card showed through even at 98 % (there is no
-    // blur behind an app overlay), so the card is opaque.
-    const val SURFACE = 0xFF121214.toInt()
-    const val BORDER = 0x26FFFFFF
-    const val TEXT = 0xFFFFFFFF.toInt()
-    const val TEXT2 = 0xFFA1A1AA.toInt()
+    // Surfaces.
+    const val SURFACE = 0xFF0E0E10.toInt()          // card
+    const val BORDER = 0x14FFFFFF                    // 1 px hairline
+    const val PANEL = 0x0AFFFFFF                     // inner panels (the task list)
+    const val DIVIDER = 0x0FFFFFFF
+    const val CAPSULE = 0xFF141416.toInt()
+    const val CHIP = 0xFF0E0E10.toInt()              // the disc behind a minimal circle
+    const val GLYPH = 0xFF2C2C2E.toInt()             // neutral app glyph
 
+    // Text: never pure white on black.
+    const val TEXT = 0xFFF5F5F7.toInt()
+    const val TEXT2 = 0xFF9A9AA2.toInt()
+    const val TEXT_DONE = 0xFFC7C7CC.toInt()
+
+    // Accents and their text colors.
     const val BLUE = 0xFF3B82F6.toInt()
+    const val BLUE_TEXT = 0xFF7AB8FF.toInt()
+    const val GREEN = 0xFF30D158.toInt()
+    const val GREEN_TEXT = 0xFF4ADE80.toInt()
+    const val AMBER = 0xFFFF9F0A.toInt()
+    const val AMBER_TEXT = 0xFFFFB340.toInt()
+    const val RED = 0xFFFF453A.toInt()
+    const val RED_TEXT = 0xFFFF6961.toInt()
+    const val PENDING = 0xFF8E8E93.toInt()
+
+    // The step circle (SPEC §3).
     const val BLUE_ORBIT = 0xFF60A5FA.toInt()
     const val BLUE_FILL = 0xFF16233F.toInt()
-    const val BLUE_TEXT = 0xFF93C5FD.toInt()
-    const val GREEN = 0xFF34C759.toInt()
-    const val AMBER = 0xFFF5A524.toInt()
-    const val RED = 0xFFFF453A.toInt()
     const val PENDING_FILL = 0xFF2C2C2E.toInt()
-    const val PENDING_TEXT = 0xFF8E8E93.toInt()
-    const val LINE = 0xFF3A3A3C.toInt()
+    const val PENDING_TEXT = PENDING
 
-    const val DONT_BG = 0xFF3A1515.toInt()
-    const val DONT_TEXT = 0xFFFFB4AB.toInt()
-    const val DO_BG = 0xFF12301C.toInt()
-    const val DO_TEXT = 0xFFA7F3C0.toInt()
-    const val WAIT_BG = 0xFF3A2A0A.toInt()
-    const val WAIT_TEXT = 0xFFFCD58A.toInt()
-    const val BUTTON = 0xFF2C2C2E.toInt()
+    // Directive capsule gradients (SPEC §4).
+    val DONT_GRADIENT = intArrayOf(0xFFFF5A4F.toInt(), 0xFFE5332A.toInt())
+    val DO_GRADIENT = intArrayOf(0xFF34D399.toInt(), 0xFF16A34A.toInt())
 
-    // The task list in the expanded card: an inner One UI card, rows tinted by state.
-    const val INNER = 0xFF1D1D20.toInt()
-    const val DIVIDER = 0xFF2C2C30.toInt()
-    const val ROW_ACTIVE = 0xFF172238.toInt()
-    const val ROW_WAIT = 0xFF2E2410.toInt()
-    const val ROW_FAIL = 0xFF301617.toInt()
+    /** [color] with its alpha replaced by [share] (0..1). */
+    fun alpha(color: Int, share: Float): Int = (color and 0x00FFFFFF) or ((share * 255).toInt().coerceIn(0, 255) shl 24)
+}
+
+/** Type from SPEC §4: system font (One UI Sans on Samsung), semibold for titles and labels. */
+internal object Type {
+    val regular: android.graphics.Typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 400, false)
+    val semibold: android.graphics.Typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 600, false)
 }
 
 /** UI strings, SPEC §5: Turkish by default, English when the phone is not in Turkish. */

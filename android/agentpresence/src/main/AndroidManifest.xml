@@ -12,6 +12,14 @@
         tools:ignore="UnknownPermission" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- The target app's real icon (SPEC §4): only launcher activities are looked at, not every package. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application>
         <service
             android:name="dev.deniz.agentpresence.PresenceService"
