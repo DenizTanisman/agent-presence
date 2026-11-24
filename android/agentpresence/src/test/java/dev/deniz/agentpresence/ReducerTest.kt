@@ -431,6 +431,53 @@ class ReducerTest {
         assertEquals(s, Session.fromJson(s.toJson()))
     }
 
+    // ---------------------------------------------------------------- choices (questions from the Mac)
+
+    private val ask = """{"id":"ask","type":"attention","device":"mac","app":"VS Code","message":"Bash: git push origin main",
+        "open":"vscode://x","choices":[{"id":"allow","label":"İzin ver","style":"primary"},
+        {"id":"deny","label":"Reddet","style":"destructive"},{"id":"open","label":"Oturumda aç"},{"label":"no id"}]}"""
+
+    @Test fun anAttentionCarriesOpenAndChoices() {
+        val s = at(1_000L to ask)!!
+        assertEquals(Phase.WAITING, s.phase)
+        assertEquals("vscode://x", s.open)
+        assertEquals(listOf("allow", "deny", "open"), s.choices.map { it.id })
+        assertEquals("primary", s.choices[0].style)
+        assertNull(s.choices[2].style)
+        assertNull(s.choice)
+        assertTrue("a question from the Mac shows no directives here", s.directivesOn("phone").isEmpty())
+    }
+
+    @Test fun chooseRecordsThePickAndTheStateReportsIt() {
+        val s = at(1_000L to ask, 2_000L to """{"id":"ask","type":"choose","choice":"allow"}""")!!
+        assertEquals("allow", s.choice)
+        assertEquals("İzin ver", s.choiceLabel)
+        assertTrue(s.acknowledged)
+        val one = JSONObject(Session.stateOf(listOf(s))).getJSONArray("sessions").getJSONObject(0)
+        assertEquals("allow", one.getString("choice"))
+        val fresh = JSONObject(Session.stateOf(listOf(at(1_000L to ask)!!))).getJSONArray("sessions").getJSONObject(0)
+        assertTrue("no pick yet is null", fresh.isNull("choice"))
+    }
+
+    @Test fun aNewAttentionClearsTheOldPickAndReplacesTheChoices() {
+        val s = at(
+            1_000L to ask,
+            2_000L to """{"id":"ask","type":"choose","choice":"deny"}""",
+            3_000L to """{"id":"ask","type":"attention","message":"Yeni soru","choices":[{"id":"yes","label":"Evet"}]}""",
+        )!!
+        assertNull(s.choice)
+        assertFalse(s.acknowledged)
+        assertEquals(listOf("yes"), s.choices.map { it.id })
+        val kept = at(1_000L to ask, 2_000L to """{"id":"ask","type":"attention","message":"Aynı"}""")!!
+        assertEquals("choices stay when the attention does not carry new ones", 3, kept.choices.size)
+    }
+
+    @Test fun aStrayChooseMakesNoSessionAndChoicesRoundTrip() {
+        assertNull(Reducer.apply(null, ev("""{"id":"z","type":"choose","choice":"allow"}"""), 1L).session)
+        val s = at(1_000L to ask, 2_000L to """{"id":"ask","type":"choose","choice":"open"}""")!!
+        assertEquals(s, Session.fromJson(s.toJson()))
+    }
+
     @Test fun mirror() {
         val (s, _) = run("""{"id":"m","type":"start","device":"mac"}""")
         assertTrue(s!!.mirroredOn("phone"))

@@ -465,23 +465,37 @@ case "ask":
         let cid = String(spec[..<eq]), label = String(spec[spec.index(after: eq)...])
         return Choice(id: cid, label: label, style: primary.contains(cid) ? "primary" : (destructive.contains(cid) ? "destructive" : nil))
     }
+    // The owner may be away from the Mac: the phone gets the same card and can answer it (when it is reachable).
+    let show = a.flags.contains("no-mirror") ? ["mac"] : ["mac", "phone"]
     var reg = Registry.load()
-    reg.remember(id, .init(device: "mac", show: ["mac"], owner: owner, at: nowMillis()), makeCurrent: false)
+    reg.remember(id, .init(device: "mac", show: show, owner: owner, at: nowMillis()), makeCurrent: false)
     reg.save()
-    deliver([e], to: ["mac"], args: a, checkStop: false)
+    deliver([e], to: show, args: a, checkStop: false)
     if a.flags.contains("no-wait") { exit(0) }
     let deadline = Date().addingTimeInterval(a.one("timeout").flatMap(Double.init) ?? 90)
     func endIt(after: Double = 0) {
         if after > 0 { usleep(useconds_t(after * 1_000_000)) }
         var x = PresenceEvent(id: id, type: .end)
         x.ts = nowMillis()
-        deliver([x], to: ["mac"], args: a, checkStop: false)
+        deliver([x], to: show, args: a, checkStop: false)
     }
+    var lastPhone = Date.distantPast
     while Date() < deadline {
         usleep(150_000)
         guard let st = readMacState() else { continue }
         guard let entry = st.sessions.first(where: { $0.id == id }) else { print("dismissed"); exit(6) }
-        if let c = entry.choice {
+        var pick = entry.choice
+        if pick == nil, show.contains("phone"), Date().timeIntervalSince(lastPhone) > 1.2 {
+            lastPhone = Date()
+            quietErrors = true
+            pick = sendPhone([], serial: a.one("serial"))?.sessions.first(where: { $0.id == id })?.choice
+            quietErrors = false
+            // Pressed "open" on the phone: the place is on the Mac, open it here.
+            if pick == "open", let target = e.open {
+                run("/usr/bin/open", target.contains("://") || target.hasPrefix("/") ? [target] : ["-b", target])
+            }
+        }
+        if let c = pick {
             print(c)
             endIt(after: 0.5) // the pressed state shows for a moment
             exit(0)
@@ -499,7 +513,7 @@ case "clear-asks":
     for (id, entry) in reg.sessions where entry.owner == owner && id.hasPrefix("ask-") && live.contains(id) {
         var x = PresenceEvent(id: id, type: .end)
         x.ts = nowMillis()
-        deliver([x], to: ["mac"], args: a, checkStop: false)
+        deliver([x], to: entry.show, args: a, checkStop: false)
     }
 
 case "hide", "unhide":

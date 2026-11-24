@@ -73,6 +73,7 @@ internal object Strings {
     val noTouch get() = if (tr) "Ekrana dokunma" else "Don't touch the screen"
     val selfDone get() = if (tr) "Bitti, artık kullanabilirsin" else "Done, you can use it now"
     val show get() = if (tr) "Göster" else "Show"
+    val openOnMac get() = if (tr) "Mac'te aç" else "Open on Mac"
     val channel get() = if (tr) "Ajan durumu" else "Agent status"
     val channelEnd get() = if (tr) "Ajan bitti / olmadı" else "Agent finished"
 }

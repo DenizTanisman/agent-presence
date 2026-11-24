@@ -140,6 +140,11 @@ object AgentPresence {
         onStopRequested?.invoke(s)
     }
 
+    /** The owner picked [choice] on the question card: the agent reads it as `choice` in the state. */
+    internal fun choose(c: Context, id: String, choice: String) {
+        send(c, PresenceEvent(id = id, type = "choose", choice = choice, keep = true))
+    }
+
     internal fun acknowledge(c: Context, id: String) {
         update(c, id) { it.copy(acknowledged = true) }
         Overlay.rest(id)

@@ -50,6 +50,19 @@ data class Step(
     }
 }
 
+/** A button on a question card (SPEC "Choices and opening the place"); [style] is `primary`, `destructive` or null. */
+data class Choice(val id: String, val label: String, val style: String? = null) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("label", label).apply { style?.let { put("style", it) } }
+
+    companion object {
+        fun listFrom(a: JSONArray?): List<Choice> = if (a == null) emptyList() else (0 until a.length()).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            val id = o.optString("id").trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            Choice(id, o.optString("label").trim().ifEmpty { id }, o.optString("style").trim().takeIf { it.isNotEmpty() })
+        }
+    }
+}
+
 /** One line of the directive capsule: a "don't" (red) or, when [positive], a "do" (green). */
 data class Directive(val text: String, val positive: Boolean = false)
 
@@ -76,6 +89,12 @@ data class PresenceEvent(
     val ttl: Int? = null,
     /** Seconds a `hide` lasts before the warnings come back by themselves (JSON `for`; default 30). */
     val forSec: Int? = null,
+    /** What tapping the question opens (a URL, path or app id); meaningful on the device it came from. */
+    val open: String? = null,
+    /** The answers offered with an `attention` (replaces the list when given). */
+    val choices: List<Choice>? = null,
+    /** `choose`: the id picked elsewhere. */
+    val choice: String? = null,
     /** Internal: an event the host made itself (its own done, the end of a hide). It keeps the stored directives,
      *  and it does not count as the agent speaking, so it does not push the ttl further. */
     val keep: Boolean = false,
@@ -97,12 +116,15 @@ data class PresenceEvent(
         ts?.let { put("ts", it) }
         ttl?.let { put("ttl", it) }
         forSec?.let { put("for", it) }
+        open?.let { put("open", it) }
+        choices?.let { l -> put("choices", JSONArray(l.map { it.toJson() })) }
+        choice?.let { put("choice", it) }
     }
 
     companion object {
         val TYPES = setOf(
             "start", "intervene", "step", "detail", "directive", "attention",
-            "resume", "done", "fail", "end", "expand", "collapse", "hide", "unhide",
+            "resume", "done", "fail", "end", "expand", "collapse", "hide", "unhide", "choose",
         )
 
         /** One event object or a JSON array of them. Throws [IllegalArgumentException] on bad input. */
@@ -142,6 +164,9 @@ data class PresenceEvent(
                 ts = if (o.has("ts") && !o.isNull("ts")) o.optLong("ts") else null,
                 ttl = if (o.has("ttl") && !o.isNull("ttl")) o.optDouble("ttl", 0.0).toInt() else null,
                 forSec = if (o.has("for") && !o.isNull("for")) o.optDouble("for", 0.0).toInt() else null,
+                open = o.str("open"),
+                choices = if (o.has("choices") && !o.isNull("choices")) Choice.listFrom(o.optJSONArray("choices")) else null,
+                choice = o.str("choice"),
             )
         }
 
@@ -180,6 +205,12 @@ data class Session(
     val heard: Long = 0L,
     /** `hide`: until when (epoch ms) every written part is off the screen and the edges glow instead; 0 = shown. */
     val hiddenUntil: Long = 0L,
+    /** What tapping the question opens, on the device it came from. */
+    val open: String? = null,
+    /** The answers offered while it waits for the owner. */
+    val choices: List<Choice> = emptyList(),
+    /** The owner's pick (a [Choice.id]), for the agent waiting on it; null until picked. */
+    val choice: String? = null,
 ) {
     val total: Int get() = steps.size
 
@@ -257,6 +288,9 @@ data class Session(
         ttl?.let { put("ttl", it) }
         put("heard", heard)
         if (hiddenUntil > 0) put("hiddenUntil", hiddenUntil)
+        open?.let { put("open", it) }
+        if (choices.isNotEmpty()) put("choices", JSONArray(choices.map { it.toJson() }))
+        choice?.let { put("choice", it) }
     }
 
     /** The part the agent reads back (SPEC "State the host reports back"). */
@@ -268,7 +302,11 @@ data class Session(
         put("stopRequested", stopRequested)
         put("acknowledged", acknowledged)
         put("updated", updated)
+        put("choice", choice ?: JSONObject.NULL)
     }
+
+    /** The label of the owner's pick, for "✓ İzin ver". */
+    val choiceLabel: String? get() = choice?.let { c -> choices.firstOrNull { it.id == c }?.label ?: c }
 
     companion object {
         /** Words that make a typed "don't" a repeat of the keyboard/trackpad warning ("imlec" = imleci, imlece). */
@@ -312,6 +350,9 @@ data class Session(
                 ttl = if (o.has("ttl") && !o.isNull("ttl")) o.optInt("ttl").takeIf { it > 0 } else null,
                 heard = o.optLong("heard", o.optLong("updated")),
                 hiddenUntil = o.optLong("hiddenUntil"),
+                open = str("open"),
+                choices = Choice.listFrom(o.optJSONArray("choices")),
+                choice = str("choice"),
             )
         }
 
@@ -400,7 +441,7 @@ object Reducer {
     fun apply(old: Session?, e: PresenceEvent, now: Long, here: String = "phone"): Result {
         if (e.type == "end") return Result(null, Cue.REMOVE, Buzz.NONE)
         // Hiding is about a session that exists; a stray hide/unhide does not make one.
-        if (old == null && (e.type == "hide" || e.type == "unhide")) return Result(null, Cue.NONE, Buzz.NONE)
+        if (old == null && (e.type == "hide" || e.type == "unhide" || e.type == "choose")) return Result(null, Cue.NONE, Buzz.NONE)
 
         val fresh = e.type == "start" || old == null
         val base = if (fresh) Session(id = e.id, started = now) else old!!
@@ -411,6 +452,8 @@ object Reducer {
             title = e.title ?: base.title,
             steps = e.steps ?: base.steps,
             detail = e.detail ?: base.detail,
+            open = e.open ?: base.open,
+            choices = e.choices ?: base.choices,
             dont = e.dont ?: base.dont,
             doList = e.doList ?: base.doList,
             updated = now,
@@ -451,7 +494,8 @@ object Reducer {
                 cue = if (newDont || newDo) Cue.ANNOUNCE else Cue.NONE
             }
             "attention" -> {
-                s = s.copy(phase = Phase.WAITING, acknowledged = false, message = e.message, hiddenUntil = 0L)
+                // A new question: the old answer no longer counts.
+                s = s.copy(phase = Phase.WAITING, acknowledged = false, message = e.message, hiddenUntil = 0L, choice = null)
                 cue = Cue.STICKY
                 buzz = Buzz.ATTENTION
             }
@@ -479,6 +523,11 @@ object Reducer {
                 s = s.copy(hiddenUntil = now + (e.forSec?.takeIf { it > 0 } ?: HIDE_SECONDS) * 1000L)
             }
             "unhide" -> s = s.copy(hiddenUntil = 0L)
+            // A pick made elsewhere (the Mac, or the owner on this phone through AgentPresence.choose).
+            "choose" -> {
+                s = s.copy(choice = e.choice ?: s.choice, acknowledged = true)
+                cue = Cue.ANNOUNCE
+            }
             "expand" -> cue = Cue.EXPAND
             "collapse" -> cue = Cue.COLLAPSE
         }

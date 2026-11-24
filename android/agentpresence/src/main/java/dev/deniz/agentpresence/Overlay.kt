@@ -263,7 +263,7 @@ internal object Overlay {
                 mode == Mode.EXPANDED || mode == Mode.WARNING -> dpf(c, 28f)
                 else -> dpf(c, 24f)
             }
-            GlowRoot.Glow(v, color, pulse = s.phase == Phase.WAITING, corner = corner)
+            GlowRoot.Glow(v, color, pulse = s.phase == Phase.WAITING && s.choice == null, corner = corner)
         }
 
         // While the agent itself drives the input, its taps must reach the app under the warning card (SPEC).
@@ -844,6 +844,11 @@ internal object Overlay {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
         }
         val white10 = Palette.alpha(0xFFFFFFFF.toInt(), 0.10f)
+        if (s.phase == Phase.WAITING && s.choices.isNotEmpty()) {
+            // A question (SPEC "Choices"): its answers are the buttons, nothing else.
+            box.addView(choicesView(c, s), LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(c, 12) })
+            return box
+        }
         if (s.live) {
             if (s.stopRequested) {
                 buttons.addView(button(c, Strings.stopping, R.drawable.agentpresence_ic_stop, Palette.alpha(Palette.RED, 0.18f), Palette.RED_TEXT, enabled = false) {})
@@ -865,6 +870,48 @@ internal object Overlay {
             buttons.addView(button(c, Strings.close, R.drawable.agentpresence_ic_close, white10, Palette.TEXT) { AgentPresence.userClose(c, s.id) })
         }
         box.addView(buttons, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(c, 10) })
+        return box
+    }
+
+    /**
+     * The answers to a question: two short ones side by side, otherwise a full-width list (like the Mac). Primary =
+     * amber with black text, destructive = red text. `open` opens the place on the Mac, so here it says "Mac'te aç"
+     * and only records the pick. After a pick: the chosen answer with a check, until the session ends.
+     */
+    private fun choicesView(c: Context, s: Session): View {
+        s.choiceLabel?.let { picked ->
+            val label = if (s.choice == "open") Strings.openOnMac else picked
+            return text(c, label, 14f, Palette.GREEN_TEXT, semibold = true).apply {
+                background = pillBg(c, Palette.alpha(Palette.GREEN, 0.12f), dpf(c, 12f))
+                setPadding(dp(c, 12), dp(c, 10), dp(c, 12), dp(c, 10))
+                setCompoundDrawablesRelative(icon(c, R.drawable.agentpresence_ic_check, 16f, Palette.GREEN_TEXT), null, null, null)
+                compoundDrawablePadding = dp(c, 8)
+            }
+        }
+        val labels = s.choices.map { if (it.id == "open") Strings.openOnMac else it.label }
+        val sideBySide = s.choices.size <= 2 && labels.all { it.length <= 14 }
+        val box = LinearLayout(c).apply { orientation = if (sideBySide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
+        for ((k, ch) in s.choices.withIndex()) {
+            val (bg, fg) = when (ch.style) {
+                "primary" -> Palette.AMBER to 0xFF000000.toInt()
+                "destructive" -> Palette.alpha(Palette.RED, 0.18f) to Palette.RED_TEXT
+                else -> Palette.alpha(0xFFFFFFFF.toInt(), 0.10f) to Palette.TEXT
+            }
+            val b = text(c, labels[k], 14f, fg, semibold = true).apply {
+                gravity = Gravity.CENTER
+                isSingleLine = true
+                ellipsize = TextUtils.TruncateAt.END
+                background = pillBg(c, bg, dpf(c, 20f))
+                minHeight = dp(c, 44)
+                setPadding(dp(c, 14), 0, dp(c, 14), 0)
+                setOnClickListener { act { AgentPresence.choose(c, s.id, ch.id) } }
+            }
+            if (sideBySide) {
+                box.addView(b, LinearLayout.LayoutParams(0, WRAP, 1f).apply { if (k > 0) marginStart = dp(c, 8) })
+            } else {
+                box.addView(b, LinearLayout.LayoutParams(MATCH, WRAP).apply { if (k > 0) topMargin = dp(c, 8) })
+            }
+        }
         return box
     }
 
