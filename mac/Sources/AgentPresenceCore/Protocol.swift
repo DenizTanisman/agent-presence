@@ -3,7 +3,7 @@ import Foundation
 /// One change in what an agent is doing on a device. See SPEC.md §1: the same JSON goes to the Mac app and the Android host.
 public struct PresenceEvent: Codable, Equatable {
     public enum Kind: String, Codable, CaseIterable {
-        case start, intervene, step, detail, directive, attention, resume, done, fail, end, expand, collapse
+        case start, intervene, step, detail, directive, attention, resume, done, fail, end, expand, collapse, hide, unhide
     }
 
     public var v: Int = 1
@@ -19,11 +19,16 @@ public struct PresenceEvent: Codable, Equatable {
     public var dont: [String]?
     public var dos: [String]?
     public var message: String?
+    /// Seconds of silence after which the host finishes the running session itself (SPEC "Never left blocked").
+    public var ttl: Double?
+    /// How long a `hide` lasts (seconds, default 30).
+    public var forSeconds: Double?
     public var ts: Double?
 
     enum CodingKeys: String, CodingKey {
-        case v, id, type, agent, app, device, title, steps, step, detail, dont, message, ts
+        case v, id, type, agent, app, device, title, steps, step, detail, dont, message, ttl, ts
         case dos = "do"
+        case forSeconds = "for"
     }
 
     public init(id: String, type: Kind) {
@@ -46,6 +51,8 @@ public struct PresenceEvent: Codable, Equatable {
         dont = Self.list(c, .dont)
         dos = Self.list(c, .dos)
         message = try? c.decodeIfPresent(String.self, forKey: .message)
+        ttl = try? c.decodeIfPresent(Double.self, forKey: .ttl)
+        forSeconds = try? c.decodeIfPresent(Double.self, forKey: .forSeconds)
         ts = try? c.decodeIfPresent(Double.self, forKey: .ts)
     }
 
@@ -142,6 +149,9 @@ public struct Session: Codable, Equatable, Identifiable {
     public var dos: [String] = []
     public var message: String?
     public var phase = Phase.running
+    public var ttl: Double?
+    /// The agent took the written warnings off the screen until then (SPEC `hide`); the edges glow red instead.
+    public var hiddenUntil: Double?
     public var stopRequested = false
     /// The owner has seen the attention request (tapped it), so it may shrink.
     public var acknowledged = false
@@ -149,7 +159,7 @@ public struct Session: Codable, Equatable, Identifiable {
     public var updated: Double
 
     enum CodingKeys: String, CodingKey {
-        case id, agent, app, device, title, steps, step, detail, dont, message, phase, stopRequested, acknowledged, started, updated
+        case id, agent, app, device, title, steps, step, detail, dont, message, phase, ttl, hiddenUntil, stopRequested, acknowledged, started, updated
         case dos = "do"
     }
 
@@ -212,6 +222,14 @@ public struct Session: Codable, Equatable, Identifiable {
         host == nil || device == host ? directives(tr: tr) : []
     }
     public var isLive: Bool { phase == .running || phase == .waiting }
+
+    public func hidden(now: Double) -> Bool { hiddenUntil.map { now < $0 } ?? false }
+
+    /// Running, has a ttl, and nothing came for that long: the host finishes it itself. Waiting never expires.
+    public func expired(now: Double) -> Bool {
+        guard phase == .running, let ttl else { return false }
+        return now - updated > ttl * 1000
+    }
 }
 
 /// What the screen should do after an event.
@@ -258,6 +276,7 @@ public enum Reducer {
         if let m = e.message { s.message = m.isEmpty ? nil : m }
         if let d = e.dont { s.dont = d.filter { !$0.isEmpty } }
         if let d = e.dos { s.dos = d.filter { !$0.isEmpty } }
+        if let t = e.ttl { s.ttl = t > 0 ? t : nil }
         s.updated = now
 
         var cue = Cue.none
@@ -284,18 +303,21 @@ public enum Reducer {
         case .attention:
             s.phase = .waiting
             s.acknowledged = false
+            s.hiddenUntil = nil
             cue = .announce
         case .resume:
             s.phase = .running
             cue = .flash
         case .done:
             s.phase = .done
+            s.hiddenUntil = nil
             if s.hasSteps { s.step = s.total }
             s.dont = []
             if e.dos == nil { s.dos = [] }
             cue = .announce
         case .fail:
             s.phase = .failed
+            s.hiddenUntil = nil
             s.dont = []
             if e.dos == nil { s.dos = [] }
             cue = .announce
@@ -303,6 +325,10 @@ public enum Reducer {
             cue = .expand
         case .collapse:
             cue = .collapse
+        case .hide:
+            s.hiddenUntil = now + max(1, e.forSeconds ?? 30) * 1000
+        case .unhide:
+            s.hiddenUntil = nil
         case .end:
             break
         }

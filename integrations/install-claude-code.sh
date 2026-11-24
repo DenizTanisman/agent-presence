@@ -58,9 +58,13 @@ launching apps), announce the task with \`presence\`, in the owner's language:
   "don't touch" until those tasks are done. Untagged tasks only show progress. The tags already produce the
   keyboard/trackpad/screen warning: do NOT also write it with \`--dont\` (use \`--dont\` only for something else,
   e.g. "Finder pencerelerini kapatma").
+- Only if you must see or tap something that lies under the island/card (top centre): \`presence hide\`, do that
+  one thing, then \`presence unhide\` at once. While hidden the screen edges glow red so the owner still keeps off;
+  the written warnings come back after 30 s by themselves. Never leave it hidden for anything else.
 - \`presence step\` when a task is done. \`presence intervene\` when you touch the device again after a pause.
 - \`presence wait "<what you need from the owner>"\` when you need them to act, then \`presence resume\`.
-- Finish with \`presence done "<result>"\` or \`presence fail "<why>"\`.
+- Finish with \`presence done "<result>"\` or \`presence fail "<why>"\` THE MOMENT you stop touching the device,
+  before you write your summary or do anything else: until then the owner believes they must not use it.
 - Exit code 3 from any \`presence\` call means the owner pressed Durdur: stop at once, then \`presence fail "Durduruldu"\`.
 A hook also opens a generic "Claude is using your Mac/phone" session when you forget, and marks your sessions done
 when your turn ends.

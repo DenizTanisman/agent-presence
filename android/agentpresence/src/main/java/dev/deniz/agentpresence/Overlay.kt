@@ -37,11 +37,7 @@ import android.widget.TextView
  * A second session is its own small circle next to the first. Main thread only.
  */
 internal object Overlay {
-    enum class Mode { EXPANDED, COMPACT, MINIMAL }
-
-    const val ANNOUNCE_MS = 5_000L
-    const val FLASH_MS = 3_000L
-    const val TAP_MS = 8_000L
+    enum class Mode { WARNING, EXPANDED, COMPACT, MINIMAL }
     private const val HERE = "phone"
 
     /**
@@ -53,40 +49,62 @@ internal object Overlay {
      */
     var minimalInStatusBar = false
 
+    /** Window opacity while the warning card lets touches through: Android passes touches only at <= 0.8. */
+    private const val THROUGH_ALPHA = 0.8f
+
     private val main = Handler(Looper.getMainLooper())
 
-    /** A size set for a while (announce, flash, tap, sticky attention). Absent = the session's resting size. */
+    /** A size set for a while (warning, announce, flash, tap, sticky attention). Absent = the resting size. */
     private val explicit = HashMap<String, Mode>()
+
+    /** What comes after the current size, per session (SPEC §2: the warning card, then the task list). */
+    private val queues = HashMap<String, ArrayDeque<Plan.Stage>>()
     private val timers = HashMap<String, Runnable>()
     private val circles = HashMap<String, StepCircleView>()
     private var focus: String? = null
     private var app: Context? = null
     private var wm: WindowManager? = null
     private var root: GlowRoot? = null
+
+    /** The full-screen, touch-through edge glow while the agent has hidden the island (SPEC). */
+    private var edge: EdgeGlowView? = null
     private var shape: String? = null
 
     /** Where the window is on screen, in pixels (null when nothing is shown): agents can avoid tapping there. */
     @Volatile var bounds: Rect? = null
         private set
 
-    fun cue(ctx: Context, id: String, cue: Cue) {
+    /** Play [stages] (from [Plan.stages]) for session [id]; an empty list = back to the resting size. */
+    fun play(ctx: Context, id: String, stages: List<Plan.Stage>) {
         app = ctx.applicationContext
-        when (cue) {
-            Cue.ANNOUNCE -> show(id, Mode.EXPANDED, ANNOUNCE_MS, focus = true)
-            Cue.STICKY -> show(id, Mode.EXPANDED, 0, focus = true)
-            Cue.EXPAND -> show(id, Mode.EXPANDED, TAP_MS, focus = true)
-            Cue.FLASH -> if (explicit[id] != Mode.EXPANDED) show(id, Mode.COMPACT, FLASH_MS, focus = false)
-            Cue.COLLAPSE -> rest(id)
-            Cue.REMOVE -> forget(id)
-            Cue.NONE -> {}
-        }
+        if (stages.isEmpty()) return rest(id)
+        // A step change does not cut into the warning or the open task list.
+        val busy = explicit[id] == Mode.WARNING || explicit[id] == Mode.EXPANDED
+        if (busy && stages.all { it.show == Plan.Show.COMPACT }) return
+        queues[id] = ArrayDeque(stages)
+        next(id)
     }
 
-    /** The owner tapped a circle or the pill. */
-    fun open(id: String) = show(id, Mode.EXPANDED, TAP_MS, focus = true)
+    private fun next(id: String) {
+        val st = queues[id]?.removeFirstOrNull()
+        if (st == null) return rest(id)
+        val mode = when (st.show) {
+            Plan.Show.WARNING -> Mode.WARNING
+            Plan.Show.EXPANDED -> Mode.EXPANDED
+            Plan.Show.COMPACT -> Mode.COMPACT
+        }
+        show(id, mode, st.ms, focus = mode != Mode.COMPACT)
+    }
 
-    /** Back to the resting size (Küçült, Tamam, a tap on the open card). */
+    /** The owner tapped a circle, the pill or the warning card: the task list, for 8 s. */
+    fun open(id: String) {
+        queues.remove(id)
+        show(id, Mode.EXPANDED, Plan.TAP_MS, focus = true)
+    }
+
+    /** Back to the resting size (Küçült, Tamam, a tap on the open card, the end of a plan). */
     fun rest(id: String) {
+        queues.remove(id)
         explicit.remove(id)
         cancel(id)
         if (focus == id) focus = null
@@ -104,7 +122,7 @@ internal object Overlay {
         if (ms > 0) {
             val r = Runnable {
                 timers.remove(id)
-                rest(id)
+                next(id)
                 app?.let { render(it) }
             }
             timers[id] = r
@@ -122,7 +140,7 @@ internal object Overlay {
      */
     fun primaryOf(list: List<Session>): Session? =
         list.filter { it.phase == Phase.WAITING && !it.acknowledged }.maxByOrNull { it.updated }
-            ?: focus?.let { f -> list.firstOrNull { it.id == f && explicit[f] == Mode.EXPANDED } }
+            ?: focus?.let { f -> list.firstOrNull { it.id == f && (explicit[f] == Mode.EXPANDED || explicit[f] == Mode.WARNING) } }
             ?: list.filter { it.hasDirectivesOn(HERE) }.maxByOrNull { it.updated }
             ?: list.filter { it.live }.maxByOrNull { it.updated }
             ?: list.maxByOrNull { it.updated }
@@ -131,7 +149,9 @@ internal object Overlay {
 
     private fun modeOf(s: Session): Mode {
         if (s.phase == Phase.WAITING && !s.acknowledged) return Mode.EXPANDED
-        val m = explicit[s.id] ?: restOf(s)
+        var m = explicit[s.id] ?: restOf(s)
+        // A warning whose directive is gone meanwhile has nothing left to say.
+        if (m == Mode.WARNING && !(s.phase == Phase.RUNNING && s.hasDirectivesOn(HERE))) m = restOf(s)
         // A directive never leaves the screen: never smaller than compact while one is active.
         return if (m == Mode.MINIMAL && s.hasDirectivesOn(HERE)) Mode.COMPACT else m
     }
@@ -141,9 +161,18 @@ internal object Overlay {
         val list = AgentPresence.sessions()
         if (list.isEmpty() || !Settings.canDrawOverlays(ctx)) {
             removeWindow()
+            hideEdge()
             return
         }
         val c = ctx.applicationContext
+        // `hide`: the agent must see or tap what is under the island. Every written part leaves the screen (the
+        // window goes, so nothing of it can be touched) and the screen edges glow red instead.
+        if (list.any { !it.mirroredOn(HERE) && Plan.hidden(it, System.currentTimeMillis()) }) {
+            removeWindow()
+            showEdge(c)
+            return
+        }
+        hideEdge()
         val r = ensureWindow(c) ?: return
         val p = primaryOf(list) ?: return
         val others = list.filter { it.id != p.id }
@@ -157,13 +186,14 @@ internal object Overlay {
         val beside = when (mode) {
             Mode.MINIMAL -> others
             Mode.COMPACT -> if (others.size <= 1) others else emptyList()
-            Mode.EXPANDED -> emptyList()
+            Mode.EXPANDED, Mode.WARNING -> emptyList()
         }
         val row = LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = if (mode == Mode.EXPANDED) Gravity.TOP else Gravity.CENTER_VERTICAL
         }
         val main = when (mode) {
+            Mode.WARNING -> warning(c, p)
             Mode.EXPANDED -> expanded(c, p)
             Mode.COMPACT -> compact(c, p, beside.size)
             Mode.MINIMAL -> circleChip(c, p, chip)
@@ -202,15 +232,15 @@ internal object Overlay {
 
         // Every active directive stays on screen: in the capsule under the pill. The expanded card is the task list
         // and never shows them, so while it is open the capsule of any other session still shows.
-        val held = list.filter { it.hasDirectivesOn(HERE) && !(it.id == p.id && mode == Mode.EXPANDED) }
+        val held = list.filter { it.hasDirectivesOn(HERE) && !(it.id == p.id && (mode == Mode.EXPANDED || mode == Mode.WARNING)) }
             .sortedBy { if (it.id == p.id) 0 else 1 }
         // Each capsule carries its glow inside its own bounds, so the margins pull it up by the glow: 8 dp of air
-        // under the pill, 6 dp between two capsules.
+        // under the pill, 5 dp between two capsules.
         val caps = ArrayList<View>()
         for (s in held) for (v in capsules(c, s, named = s.id != p.id)) {
             r.addView(v, LinearLayout.LayoutParams(WRAP, WRAP).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = if (caps.isEmpty()) dp(c, 8) - glow(c) else dp(c, 6) - 2 * glow(c)
+                topMargin = if (caps.isEmpty()) dp(c, 8) - glow(c) else dp(c, 5) - 2 * glow(c)
             })
             caps += v
         }
@@ -218,6 +248,10 @@ internal object Overlay {
         // The alert glow (SPEC §4): waiting pulses amber, failed glows red, done glows green; nothing while running.
         r.radius = dpf(c, 14f)
         r.glows = shapes.mapNotNull { (s, v) ->
+            if (v === main && mode == Mode.WARNING) {
+                val red = s.directivesOn(HERE).any { !it.positive }
+                return@mapNotNull GlowRoot.Glow(v, if (red) Palette.RED else Palette.GREEN, pulse = false, corner = dpf(c, 28f))
+            }
             val color = when (s.phase) {
                 Phase.WAITING -> Palette.AMBER
                 Phase.FAILED -> Palette.RED
@@ -226,13 +260,14 @@ internal object Overlay {
             }
             val corner = when {
                 v !== main || mode == Mode.MINIMAL -> -1f
-                mode == Mode.EXPANDED -> dpf(c, 28f)
+                mode == Mode.EXPANDED || mode == Mode.WARNING -> dpf(c, 28f)
                 else -> dpf(c, 24f)
             }
             GlowRoot.Glow(v, color, pulse = s.phase == Phase.WAITING, corner = corner)
         }
 
-        place(c, r, mode, chip, glowing = r.glows.isNotEmpty())
+        // While the agent itself drives the input, its taps must reach the app under the warning card (SPEC).
+        place(c, r, mode, chip, glowing = r.glows.isNotEmpty(), through = mode == Mode.WARNING && p.drivesInput)
 
         val now = "${p.id}/$mode/${others.size}/${held.joinToString { it.id }}"
         if (now != shape) {
@@ -247,7 +282,11 @@ internal object Overlay {
                 }
             })
             // A spring-like settle (SPEC §4 motion: response 0.4, damping 0.82).
-            row.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(OvershootInterpolator(0.7f)).start()
+            // The glow is drawn by the root and follows this fade, so the root redraws on every frame of it.
+            row.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(OvershootInterpolator(0.7f))
+                .setUpdateListener { r.invalidate() }
+                .withEndAction { r.invalidate() }
+                .start()
             for (v in caps) {
                 v.alpha = 0f
                 v.scaleX = 0.92f
@@ -313,7 +352,7 @@ internal object Overlay {
      * Minimal: right under the camera hole, centred on it (or, with [minimalInStatusBar], beside it in the band).
      * Expanded and compact: top centre, under the status bar. Without a camera hole: top centre.
      */
-    private fun place(c: Context, r: LinearLayout, mode: Mode, chip: Int, glowing: Boolean) {
+    private fun place(c: Context, r: LinearLayout, mode: Mode, chip: Int, glowing: Boolean, through: Boolean) {
         val lp = r.layoutParams as? WindowManager.LayoutParams ?: return
         val top = insetsTop(c)
         // A glow needs room around its shape inside the window, or the window edge cuts it off. The window moves
@@ -352,11 +391,18 @@ internal object Overlay {
             View.MeasureSpec.makeMeasureSpec(screen.heightPixels, View.MeasureSpec.AT_MOST),
         )
         val w = r.measuredWidth.coerceAtMost(screen.widthPixels)
-        if (lp.gravity != gravity || lp.x != gx || lp.y != gy || lp.width != w) {
+        // Click-through: Android lets a touch pass an app overlay only when the overlay is at most 80 % opaque
+        // (untrusted-touch rule), so the window is 0.8 for as long as it lets touches through.
+        val flags = if (through) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        val alpha = if (through) THROUGH_ALPHA else 1f
+        if (lp.gravity != gravity || lp.x != gx || lp.y != gy || lp.width != w || lp.flags != flags || lp.alpha != alpha) {
             lp.gravity = gravity
             lp.x = gx
             lp.y = gy
             lp.width = w
+            lp.flags = flags
+            lp.alpha = alpha
             runCatching { wm?.updateViewLayout(r, lp) }
         }
     }
@@ -368,8 +414,37 @@ internal object Overlay {
         bounds = null
     }
 
-    /** True while the window is on screen: the foreground service may only start after this (Android 15+). */
-    fun isShowing() = root != null
+    /** True while a window is on screen: the foreground service may only start after this (Android 15+). */
+    fun isShowing() = root != null || edge != null
+
+    private fun showEdge(c: Context) {
+        if (edge != null) return
+        val manager = wm ?: c.getSystemService(WindowManager::class.java).also { wm = it }
+        val lp = WindowManager.LayoutParams(
+            MATCH, MATCH,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            setFitInsetsTypes(0)
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            // Android lets touches pass an app overlay only when the window is at most 80 % opaque, whatever it draws.
+            alpha = THROUGH_ALPHA
+            title = "AgentPresenceEdge"
+        }
+        val v = EdgeGlowView(c)
+        runCatching {
+            manager.addView(v, lp)
+            edge = v
+        }
+    }
+
+    private fun hideEdge() {
+        edge?.let { v -> runCatching { wm?.removeView(v) } }
+        edge = null
+    }
 
     private fun updateBounds() {
         val v = root ?: return
@@ -543,16 +618,13 @@ internal object Overlay {
     }
 
     /**
-     * The directive capsules under the pill (SPEC §4): one per kind, the "don't"s with a red badge and a raised hand,
-     * the "do"s with a green badge and a check, joined with " · ". A session that is not the main one is named.
+     * The directive capsules under the pill (SPEC §4): one capsule per directive, stacked like the lines of the
+     * warning card; "don't"s with a red badge and a raised hand, "do"s with a green badge and a check. A session that
+     * is not the main one is named on each of its capsules.
      */
     private fun capsules(c: Context, s: Session, named: Boolean): List<View> {
         val who = if (named) (s.app ?: s.agent) + ": " else ""
-        val (donts, dos) = s.directivesOn(HERE).partition { !it.positive }
-        val out = ArrayList<View>()
-        if (donts.isNotEmpty()) out += capsule(c, who + donts.joinToString(" · ") { it.text }, positive = false, s)
-        if (dos.isNotEmpty()) out += capsule(c, who + dos.joinToString(" · ") { it.text }, positive = true, s)
-        return out
+        return s.directivesOn(HERE).map { capsule(c, who + it.text, it.positive, s) }
     }
 
     /** Extra room around a capsule for its glow; [render] pulls the capsule up by it so the visible gap stays small. */
@@ -635,6 +707,65 @@ internal object Overlay {
         isSingleLine = true
         background = pillBg(c, Palette.alpha(accent, 0.16f), dpf(c, 12f))
         setPadding(dp(c, 8), dp(c, 3), dp(c, 8), dp(c, 3))
+    }
+
+    /**
+     * The warning card (SPEC §2 "Warning first"): what to (not) do, in large type, before anything about the
+     * process. Header app icon · agent · app and the red word "Dokunma"; each directive on its own line with its
+     * gradient disc; the session title under them. A tap goes on to the task list.
+     */
+    private fun warning(c: Context, s: Session): View {
+        val dirs = s.directivesOn(HERE)
+        val box = LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            background = card(c, 28)
+            elevation = dp(c, 12).toFloat()
+            setPadding(dp(c, 18), dp(c, 16), dp(c, 18), dp(c, 18))
+            layoutParams = LinearLayout.LayoutParams(minOf(maxWidth(c), dp(c, 420)), WRAP)
+            setOnClickListener { act { AgentPresence.userExpand(c, s.id) } }
+        }
+        val head = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        head.addView(appIcon(c, s, 22))
+        head.addView(text(c, listOfNotNull(s.agent, s.app).joinToString(" · "), 15f, Palette.TEXT, semibold = true).apply {
+            letterSpacing = -0.013f
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(c, 10), 0, dp(c, 8), 0)
+        }, LinearLayout.LayoutParams(0, WRAP, 1f))
+        if (dirs.any { !it.positive }) head.addView(badge(c, Strings.handsOff, Palette.RED, Palette.RED_TEXT))
+        box.addView(head)
+
+        for ((k, d) in dirs.withIndex()) {
+            val line = LinearLayout(c).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val disc = FrameLayout(c).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    if (d.positive) Palette.DO_GRADIENT else Palette.DONT_GRADIENT,
+                ).apply { shape = GradientDrawable.OVAL }
+                addView(iconView(c, if (d.positive) R.drawable.agentpresence_ic_check else R.drawable.agentpresence_ic_hand, 18f, 0xFFFFFFFF.toInt()))
+            }
+            line.addView(disc, LinearLayout.LayoutParams(dp(c, 32), dp(c, 32)))
+            line.addView(text(c, d.text, 17f, Palette.TEXT, semibold = true).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(dp(c, 12), 0, 0, 0)
+            }, LinearLayout.LayoutParams(0, WRAP, 1f))
+            box.addView(line, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(c, if (k == 0) 16 else 10) })
+        }
+
+        if (!s.title.isNullOrBlank()) {
+            box.addView(text(c, s.title, 13f, Palette.TEXT2).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(c, 16) })
+        }
+        return box
     }
 
     private fun expanded(c: Context, s: Session): View {

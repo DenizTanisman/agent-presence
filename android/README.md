@@ -15,6 +15,7 @@ The protocol and the look are shared with the Mac library: see [`../SPEC.md`](..
 |---|---|---|
 | ![](shots/01-expanded.png) | ![](shots/02-compact-capsule.png) | ![](shots/03-minimal-under-camera.png) |
 | ![](shots/04-waiting.png) | ![](shots/05-done.png) | ![](shots/06-done-minimal.png) |
+| ![](shots/00-warning-first.png) | ![](shots/07-self-finish.png) | |
 
 | | |
 |---|---|
@@ -27,6 +28,24 @@ Directives are computed (SPEC "Directives on screen"): a step may say which inpu
 capsule says so ("Ekrana dokunma", "Klavyeye ve trackpad'e dokunma", ...), plus the steps' own `dont`, the session
 `dont` and `do`. A typed "don't" that only repeats a generated warning (one about the keyboard, trackpad or screen) is
 dropped, so each warning is said once. Nothing is shown while the agent waits for you or once it is over.
+
+**Warning first** (SPEC §2): whenever a session gets a directive it did not show a moment ago (start, intervene, a new
+`dont`/`do`, or `resume` bringing one back), a warning card comes first for 3 s: each directive on its own line in
+large type, under a red "Dokunma". Then the task list (start/intervene) or the resting size. While the agent itself
+drives the phone's input, the card lets touches through (Android passes them only through a window that is at most
+80 % opaque, so the card is a little see-through for those 3 s); otherwise a tap on it opens the task list.
+
+**Never left blocked** (SPEC): an event may carry `"ttl"` (seconds). A running session that hears nothing for that long
+is finished by the phone itself ("Bitti, artık kullanabilirsin", the usual done announcement, then the green check),
+so a dropped adb link never leaves "Ekrana dokunma" on screen. A waiting session never expires; a later event
+continues the session.
+
+**Hide** (SPEC "Edge glow while hidden"): only the agent can send `hide` (there is no button for it) when it must see or
+tap what is under the island. Every written part leaves the screen (its window is removed, so nothing of it can be
+touched) and a full-screen, touch-through layer makes the screen edges glow red instead, following the display's
+rounded corners and breathing. It lasts until `unhide`, or `for` seconds (default 30); `done`, `fail`, `attention` and
+`end` also bring the warnings back. Android passes touches through an app overlay only when the window is at most
+80 % opaque, so the red edge peaks at 80 %.
 
 Alerts glow in their accent (SPEC §4): the card, the pill or the circle pulses amber while the agent waits for you,
 glows red when it failed and green when it is done. Nothing glows while it simply runs.

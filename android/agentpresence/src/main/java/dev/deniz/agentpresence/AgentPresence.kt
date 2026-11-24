@@ -54,7 +54,8 @@ object AgentPresence {
     fun send(context: Context, events: List<PresenceEvent>): String {
         init(context)
         val now = System.currentTimeMillis()
-        val effects = ArrayList<Triple<String, Cue, Buzz>>()
+        class Effect(val id: String, val stages: List<Plan.Stage>?, val buzz: Buzz, val removed: Boolean = false)
+        val effects = ArrayList<Effect>()
         val ended = ArrayList<Session>()
         synchronized(lock) {
             for (e in events) {
@@ -64,9 +65,12 @@ object AgentPresence {
                     for (g in gone) {
                         sessions.remove(g.id)
                         Notifier.cancelFinished(app, g.id)
+                        effects += Effect(g.id, null, Buzz.NONE, removed = true)
                     }
                 }
+                val before = sessions[e.id]?.directivesOn(DEVICE).orEmpty()
                 val r = Reducer.apply(sessions[e.id], e, now)
+                val warn = Plan.newDirective(before, r.session, DEVICE)
                 if (e.type == "start" || e.type == "end") Notifier.cancelFinished(app, e.id)
                 if (r.session == null) {
                     sessions.remove(e.id)
@@ -74,15 +78,15 @@ object AgentPresence {
                     sessions[e.id] = r.session
                     if (r.buzz == Buzz.DONE || r.buzz == Buzz.FAILED) ended += r.session
                 }
-                effects += Triple(e.id, r.cue, r.buzz)
+                effects += Effect(e.id, Plan.stages(e.type, r.cue, warn), r.buzz, removed = r.session == null)
             }
             save()
         }
         onMain {
             val c = context.applicationContext
-            for ((id, cue, buzz) in effects) {
-                Overlay.cue(c, id, cue)
-                buzz(c, buzz)
+            for (f in effects) {
+                if (f.removed) Overlay.forget(f.id) else f.stages?.let { Overlay.play(c, f.id, it) }
+                buzz(c, f.buzz)
             }
             for (s in ended) Notifier.finished(c, s)
             refresh(c)
@@ -186,6 +190,7 @@ object AgentPresence {
     internal fun refresh(c: Context) {
         Overlay.render(c)
         PresenceService.sync(c)
+        Watchdog.kick(c)
         onChange?.invoke()
     }
 

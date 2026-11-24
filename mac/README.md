@@ -4,9 +4,12 @@ When an AI agent (Claude, or any other) drives your Mac, a small island grows ou
 is doing, which step it is on, what you must not touch, and when it is done. It never leaves you guessing whether the
 work is still running.
 
-| expanded: the tasks (announce, 5 s) | compact + directive capsule | minimal (beside the notch) |
+| 1. warning first (3 s) | 2. the tasks (5 s) | 3. at rest: compact + directive capsules |
 |---|---|---|
-| ![](shots/03-expanded-step3.png) | ![](shots/02-compact-capsule.png) | ![](shots/04-minimal-no-directive.png) |
+| ![](shots/00-warning-first.png) | ![](shots/03-expanded-step3.png) | ![](shots/02-compact-capsule.png) |
+
+- **What to (not) do comes first.** When a task starts with something you must not touch, a warning card opens
+  first; only then the task list. Without such a thing the task list opens directly.
 
 - **One circle tracks the whole task.** It orbits while a step runs, draws a check when the step ends and slides the
   next number in. One ripple means done. An amber pulse means it needs you, and a red shake means it failed.

@@ -20,6 +20,7 @@ presence: tell the owner what the agent is doing on their Mac or phone.
   presence done ["<summary>"]                      finished (stays until the owner closes it)
   presence fail "<why>"                            gave up
   presence end                                     take it away now
+  presence hide [--for S] | unhide                 agent only: warnings off the screen, edges glow red (default 30 s)
   presence expand | collapse | status [--json] | demo [--on mac|phone] [--fast]
   presence auto mac|phone [--tool NAME]            hook helper: "Claude is using your Mac/phone" until finish
   presence finish ["<summary>"]                    hook helper: mark this agent session's running ones done
@@ -29,7 +30,8 @@ presence: tell the owner what the agent is doing on their Mac or phone.
   presence send '<json>' [--to mac,phone]          raw SPEC.md events
   presence snapshot <file.png>                     draw what the Mac island shows now (no screen permission needed)
 
-Options: --id ID (default: the last session this agent started), --agent NAME (default Claude), --on mac|phone (device
+Options: --ttl SECONDS (start/intervene, default 120: the device finishes the task itself after that much silence),
+--id ID (default: the last session this agent started), --agent NAME (default Claude), --on mac|phone (device
 being driven; phone work is also shown on the Mac unless --no-mirror, Mac work stays on the Mac), --serial S
 (adb device), --owner ID (agent session; default $CLAUDE_CODE_SESSION_ID).
 Exit codes: 0 ok, 2 usage, 3 the owner pressed Stop (stop now), 4 no display could be reached.
@@ -216,38 +218,50 @@ func adbPath() -> String? {
     return paths.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 
-func phoneSerial(_ adb: String, _ explicit: String?) -> String? {
+/// Phones to try, best first: an explicit serial, else every attached one with USB before Wi-Fi.
+func phoneSerials(_ adb: String, _ explicit: String?) -> [String] {
     let env = ProcessInfo.processInfo.environment
-    if let s = explicit ?? env["AGENT_PRESENCE_SERIAL"] ?? env["ANDROID_SERIAL"] { return s }
-    let lines = run(adb, ["devices"]).out.split(separator: "\n").compactMap { line -> String? in
+    let attached = run(adb, ["devices"], timeout: 5).out.split(separator: "\n").compactMap { line -> String? in
         let parts = line.split(separator: "\t")
         return parts.count == 2 && parts[1] == "device" ? String(parts[0]) : nil
     }
-    // USB first: it is the steadier link.
-    return lines.first { !$0.contains(":") } ?? lines.first
+    // A real phone over USB, then over Wi-Fi; an emulator only when nothing else is attached.
+    let real = attached.filter { !$0.hasPrefix("emulator-") }
+    let ordered = real.filter { !$0.contains(":") } + real.filter { $0.contains(":") }
+        + attached.filter { $0.hasPrefix("emulator-") }
+    if let s = explicit ?? env["AGENT_PRESENCE_SERIAL"] ?? env["ANDROID_SERIAL"] {
+        // The chosen link first; the other links of the same phone are the fallback when it drops.
+        return [s] + ordered.filter { $0 != s }
+    }
+    return ordered
 }
 
+/// Sends over adb and returns the host's state. A dropped link must not swallow an event (an undelivered `done`
+/// would leave the phone saying "don't touch"): 3 tries, each over every attached link (USB, then Wi-Fi).
 func sendPhone(_ events: [PresenceEvent], serial: String?) -> PresenceState? {
     guard let adb = adbPath() else {
         if !quietErrors { FileHandle.standardError.write(Data("presence: adb not found (set ADB=/path/to/adb)\n".utf8)) }
         return nil
     }
-    guard let s = phoneSerial(adb, serial) else {
-        if !quietErrors { FileHandle.standardError.write(Data("presence: no phone over adb\n".utf8)) }
-        return nil
-    }
     let b64 = try! JSONEncoder().encode(events).base64EncodedString()
-    // -f 0x20 (FLAG_INCLUDE_STOPPED_PACKAGES): also reaches the host right after install or a force-stop.
-    let r = run(adb, ["-s", s, "shell", "am", "broadcast", "-f", "0x20", "-n", receiver, "-a", action, "--es", "b64", b64])
-    guard r.code == 0, let m = r.out.range(of: #"data="([^"]*)""#, options: .regularExpression) else {
-        if !quietErrors {
-            FileHandle.standardError.write(Data("presence: phone did not answer (is Agent Presence installed?) \(r.out.prefix(200))\n".utf8))
+    var last = ""
+    for attempt in 0..<3 {
+        if attempt > 0 { usleep(700_000) }
+        let serials = phoneSerials(adb, serial)
+        if serials.isEmpty { last = "no phone over adb"; continue }
+        for s in serials {
+            // -f 0x20 (FLAG_INCLUDE_STOPPED_PACKAGES): also reaches the host right after install or a force-stop.
+            let r = run(adb, ["-s", s, "shell", "am", "broadcast", "-f", "0x20", "-n", receiver, "-a", action, "--es", "b64", b64],
+                        timeout: 8)
+            if r.code == 0, let m = r.out.range(of: #"data="([^"]*)""#, options: .regularExpression),
+               let d = Data(base64Encoded: String(r.out[m].dropFirst(6).dropLast())) {
+                return try? JSONDecoder().decode(PresenceState.self, from: d)
+            }
+            last = "phone did not answer on \(s) (is Agent Presence installed?) \(r.out.prefix(160))"
         }
-        return nil
     }
-    let quoted = r.out[m].dropFirst(6).dropLast()
-    guard let d = Data(base64Encoded: String(quoted)) else { return nil }
-    return try? JSONDecoder().decode(PresenceState.self, from: d)
+    if !quietErrors { FileHandle.standardError.write(Data("presence: \(last)\n".utf8)) }
+    return nil
 }
 
 // MARK: sending
@@ -289,6 +303,7 @@ func event(_ type: PresenceEvent.Kind, _ id: String, _ a: Args) -> PresenceEvent
     e.dont = a.many("dont")
     e.dos = a.many("do")
     e.message = a.one("message")
+    e.ttl = a.one("ttl").flatMap(Double.init)
     return e
 }
 
@@ -380,6 +395,8 @@ case "start", "intervene":
     if let t = a.text { e.title = t }
     e.device = device
     if a.command == "start" { e.agent = e.agent ?? "Claude" }
+    // SPEC "Never left blocked": after 2 minutes without a word the device finishes the task itself.
+    e.ttl = e.ttl ?? 120
     deliver([e], to: show, args: a)
     if !a.flags.contains("quiet") { print(id) }
 
@@ -425,6 +442,22 @@ case "done", "fail":
 case "end":
     let s = session()
     deliver([event(.end, s.id, a)], to: s.show, args: a, checkStop: false)
+
+case "hide", "unhide":
+    // Only the agent does this: it must see or tap what is under the island. The written warnings leave the driven
+    // device and its screen edges glow red; `unhide` (or the end of `--for`, default 30 s) brings them back.
+    let reg = Registry.load()
+    let owner = ownerID(a)
+    var id = a.one("id") ?? reg.currentID(owner: owner)
+    if id == nil, let owner, let dev = a.one("on") { id = "auto-\(owner.prefix(8))-\(dev)" }
+    guard let id, let entry = reg.sessions[id] ?? (a.one("on").map { Registry.Entry(device: $0, show: [$0], owner: owner, at: 0) }) else {
+        fail("no session to \(a.command): start one first (or pass --id / --on)")
+    }
+    var e = PresenceEvent(id: id, type: a.command == "hide" ? .hide : .unhide)
+    e.ts = nowMillis()
+    e.forSeconds = a.one("for").flatMap(Double.init)
+    // The driven device only: a mirror keeps showing the progress.
+    deliver([e], to: [entry.show.first ?? entry.device], args: a, checkStop: false)
 
 case "expand", "collapse":
     let s = session()
@@ -492,6 +525,7 @@ case "auto":
         var e = PresenceEvent(id: id, type: .detail)
         e.ts = nowMillis()
         e.detail = doing
+        e.ttl = 30
         deliver([e], to: entry.show, args: a)
     } else {
         let show = targets(device: device, a: a)
@@ -507,6 +541,8 @@ case "auto":
         e.dont = [device == "mac" ? (tr ? "Klavyeye ve trackpad'e dokunma" : "Don't touch the keyboard or trackpad")
                                   : (tr ? "Ekrana dokunma" : "Don't touch the screen")]
         e.detail = doing
+        // The hook cannot know when the agent is done with the device: 30 s after its last touch it is.
+        e.ttl = 30
         deliver([e], to: show, args: a)
     }
 

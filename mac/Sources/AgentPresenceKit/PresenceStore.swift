@@ -5,7 +5,8 @@ import SwiftUI
 /// Holds the sessions and decides how big the island is (SPEC.md §2, Mac column). Main thread only.
 @MainActor
 public final class PresenceStore: ObservableObject {
-    public enum Mode: Equatable { case minimal, compact, expanded }
+    /// `warning`: the card that tells the owner what to (not) do, always before any process info (SPEC §2).
+    public enum Mode: Equatable { case minimal, compact, expanded, warning }
 
     /// Why the island is expanded: an announcement is click-through while the agent drives the mouse;
     /// one the owner opened (or one that waits for them) takes clicks.
@@ -15,6 +16,8 @@ public final class PresenceStore: ObservableObject {
         /// macOS keeps a banner on screen about this long.
         public var announce: TimeInterval = 5
         public var flash: TimeInterval = 3
+        /// The warning card: long enough to read one or two short lines.
+        public var warning: TimeInterval = 3
         /// The owner opened it: shrink again after this long without the pointer on it.
         public var userOpen: TimeInterval = 8
         public init() {}
@@ -22,6 +25,8 @@ public final class PresenceStore: ObservableObject {
 
     @Published public private(set) var sessions: [Session] = []
     @Published public private(set) var mode: Mode = .minimal
+    /// A session on this device is hidden (SPEC `hide`): no written parts, red screen edges instead.
+    @Published public private(set) var hidden = false
     @Published public private(set) var reason: Reason = .announce
     @Published private var focusID: String?
 
@@ -42,7 +47,31 @@ public final class PresenceStore: ObservableObject {
     private var revert: DispatchWorkItem?
     private var revertDue = false
 
-    public init() {}
+    private var watchdog: Timer?
+
+    public init() {
+        // SPEC "Never left blocked": a running session that goes quiet past its ttl is finished here, so the owner
+        // is told it is over even when the agent died or the link dropped.
+        let t = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.expireQuietSessions() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        watchdog = t
+    }
+
+    private func expireQuietSessions() {
+        let now = nowMillis()
+        for s in sessions where s.hiddenUntil != nil && !s.hidden(now: now) {
+            mutate(s.id) { $0.hiddenUntil = nil }
+        }
+        refreshHidden()
+        for s in sessions where s.expired(now: now) {
+            var e = PresenceEvent(id: s.id, type: .done)
+            e.ts = now
+            e.message = L.tr ? "Bitti, artık kullanabilirsin" : "Done, you can use it now"
+            handle(e)
+        }
+    }
 
     public var primary: Session? {
         if let f = focusID, let s = sessions.first(where: { $0.id == f }) {
@@ -62,6 +91,7 @@ public final class PresenceStore: ObservableObject {
     /// Clicks reach the island (otherwise they fall through to the app under it).
     public var interactive: Bool {
         guard let p = primary else { return false }
+        if mode == .warning { return !(p.phase == .running && p.handsOff(on: host)) }
         if mode != .expanded { return true }
         return !(reason == .announce && p.phase == .running && p.handsOff(on: host))
     }
@@ -70,7 +100,19 @@ public final class PresenceStore: ObservableObject {
 
     public func handle(_ e: PresenceEvent) {
         let before = primary?.id
+        let warnedBefore = localDirectives(e.id)
         let cue = Reducer.apply(e, to: &sessions, now: nowMillis())
+        // What to (not) do comes before anything about the process: a directive this device did not show a moment
+        // ago opens the warning card first; the task list (start / intervene) or the resting size follows.
+        let warnNow = localDirectives(e.id)
+        if !warnNow.isEmpty, warnNow != warnedBefore {
+            focusID = e.id
+            afterWarning = e.type == .start || e.type == .intervene ? .tasks : .rest
+            show(.warning, .announce, for: timing.warning)
+            refreshHidden()
+            onChange?(sessions)
+            return
+        }
         switch cue {
         case .announce:
             focusID = e.id
@@ -79,7 +121,7 @@ public final class PresenceStore: ObservableObject {
             sound(for: e.type)
         case .flash:
             guard primary?.id == e.id else { break }
-            if mode == .expanded { break }
+            if mode == .expanded || mode == .warning { break }
             show(.compact, .announce, for: timing.flash)
         case .removed:
             if focusID == e.id { focusID = nil }
@@ -92,7 +134,14 @@ public final class PresenceStore: ObservableObject {
         case .none:
             if primary?.id != before { settle() }
         }
+        refreshHidden()
         onChange?(sessions)
+    }
+
+    private func refreshHidden() {
+        let now = nowMillis()
+        let h = sessions.contains { $0.device == host && $0.hidden(now: now) }
+        if h != hidden { hidden = h }
     }
 
     /// Puts sessions back after a restart (no announcement).
@@ -106,7 +155,10 @@ public final class PresenceStore: ObservableObject {
     /// Tap on the island (not on a button).
     public func tapIsland() {
         guard let p = primary else { return }
-        if mode == .expanded {
+        if mode == .warning {
+            afterWarning = nil
+            show(.expanded, .user, for: timing.userOpen)
+        } else if mode == .expanded {
             acknowledge(p.id)
             settle()
         } else {
@@ -163,6 +215,7 @@ public final class PresenceStore: ObservableObject {
     private func settle() {
         revert?.cancel()
         revertDue = false
+        afterWarning = nil
         // At rest a session whose "don't" is active takes the big island back, so its directive stays readable.
         if let f = focusID, let s = sessions.first(where: { $0.id == f }), !s.handsOff(on: host),
            sessions.contains(where: { $0.handsOff(on: host) && $0.id != f }) {
@@ -192,10 +245,25 @@ public final class PresenceStore: ObservableObject {
         let w = DispatchWorkItem { [weak self] in
             guard let self else { return }
             if self.hovering && self.interactive { return } // mouse leaving reschedules
+            if self.mode == .warning, let next = self.afterWarning {
+                self.afterWarning = nil
+                if next == .tasks {
+                    self.show(.expanded, .announce, for: self.timing.announce)
+                    return
+                }
+            }
             self.settle()
         }
         revert = w
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: w)
+    }
+
+    private enum AfterWarning { case tasks, rest }
+    private var afterWarning: AfterWarning?
+
+    /// The directives this device shows for a session right now (empty for a mirror, while waiting, when over).
+    private func localDirectives(_ id: String) -> [String] {
+        sessions.first { $0.id == id }.map { $0.directives(tr: L.tr, on: host).map(\.text) } ?? []
     }
 
     private func sound(for kind: PresenceEvent.Kind) {

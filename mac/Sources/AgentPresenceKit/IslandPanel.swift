@@ -44,6 +44,10 @@ public final class IslandController {
             .removeDuplicates()
             .sink { [weak self] empty in self?.visible(!empty) }
             .store(in: &bag)
+        store.$hidden
+            .removeDuplicates()
+            .sink { [weak self] on in self?.edges(on) }
+            .store(in: &bag)
     }
 
     /// The display with the notch if there is one, else the main display.
@@ -113,6 +117,7 @@ public final class IslandController {
                     .frame(width: g.notchWidth, height: g.barHeight)
             }
             IslandRoot(store: store, geo: g, host: host) { _ in }
+            if store.hidden { EdgeGlow() }
         }
         .environment(\.presenceSnapshot, true)
         .frame(width: g.panelSize.width, height: height, alignment: .top)
@@ -130,6 +135,30 @@ public final class IslandController {
         return (try? png.write(to: url, options: .atomic)) != nil
     }
 
+    private var edgePanel: Panel?
+
+    /// SPEC "Edge glow while hidden": a click-through layer over the whole screen whose edges glow red.
+    private func edges(_ on: Bool) {
+        guard on else {
+            edgePanel?.orderOut(nil)
+            edgePanel = nil
+            return
+        }
+        guard let screen, edgePanel == nil else { return }
+        let p = Panel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = false
+        p.ignoresMouseEvents = true
+        p.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.assistiveTechHighWindow)))
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        p.sharingType = capturable ? .readOnly : .none
+        p.contentView = NSHostingView(rootView: EdgeGlow())
+        p.setFrame(screen.frame, display: true)
+        p.orderFrontRegardless()
+        edgePanel = p
+    }
+
     /// Clicks reach the panel only while the pointer is on the island; everywhere else they fall through.
     private func track() {
         let m = NSEvent.mouseLocation
@@ -139,6 +168,30 @@ public final class IslandController {
         if store.hovering != inside { store.hovering = inside }
         let ignore = !(inside && store.interactive)
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
+    }
+}
+
+/// Red light along the screen edges, breathing like Samsung's edge lighting.
+struct EdgeGlow: View {
+    @State private var bright = false
+
+    var body: some View {
+        GeometryReader { g in
+            let red = Color(hex: 0xFF3B30)
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(red, lineWidth: 10)
+                    .blur(radius: 9)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(red.opacity(0.9), lineWidth: 3)
+                    .blur(radius: 1.5)
+            }
+            .frame(width: g.size.width, height: g.size.height)
+            .opacity(bright ? 1 : 0.55)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { bright = true } }
     }
 }
 

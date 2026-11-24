@@ -53,6 +53,8 @@ Every change is one event. Unknown fields are ignored; missing optional fields k
 | `dont` | things the owner must NOT do during the whole task (replaces the list; `[]` clears). Usually empty: per-step `uses` generate the common ones. |
 | `do` | things the owner should do (replaces the list; `[]` clears). Not for "I'll tell you when it's done": the island always does. |
 | `message` | text for attention / done / fail |
+| `ttl` | seconds of silence after which the host itself finishes the running session (see "Never left blocked") |
+| `for` | seconds a `hide` lasts before the warnings come back by themselves (default 30) |
 
 | `type` | effect |
 |---|---|
@@ -67,6 +69,8 @@ Every change is one event. Unknown fields are ignored; missing optional fields k
 | `fail` | phase = failed, `dont` cleared, `do` cleared unless given, `message` = why. Same lifecycle as done, red. |
 | `end` | remove the session now, no animation beyond fade. |
 | `expand` / `collapse` | UI control (tests, CLI). |
+| `hide` | the agent must see or tap what is under the island/card: on the **driven device only**, every written part (card, pill, capsules, circles) is taken off the screen and the **screen edges glow red** instead (Samsung edge-lighting style), so the owner still knows not to touch. Lasts until `unhide`, or `for` seconds (default 30). Only the agent can do this: there is no button for it. |
+| `unhide` | the written warnings come back at once; the edge glow stops. `done`, `fail`, `attention` and `end` also unhide. |
 
 ### Which device shows a session
 
@@ -96,6 +100,24 @@ Directives appear **only in the closed sizes** (compact capsule). The expanded v
 When a session has no active directive, the idle island is just the minimal circle: it says "something is running" and
 its state, nothing more.
 
+### Edge glow while hidden
+
+While a session on this device is hidden: a full-screen, touch-through layer draws a red glow along all four screen
+edges, following the display's rounded corners (Android: `Display.getRoundedCorner`; Mac: the screen frame),
+about 10 pt wide, `#FF3B30` fading inward, breathing 55 % ↔ 100 % over 1.6 s. Nothing else of the island shows, so
+taps and screenshots by the agent reach the app below. Mirrors on the other device are not affected.
+
+### Never left blocked
+
+The end must reach the owner even when the agent goes quiet or the link to the phone drops (USB unplugged, Wi-Fi adb
+gone). A running session with a `ttl` that gets no event for `ttl` seconds is finished **by the host itself**: phase
+done, message "Bitti, artık kullanabilirsin" ("Done, you can use it now"), the usual done announcement (expanded 5 s,
+green glow, sound/vibration) and then the green check. A waiting session never expires (the owner must act). Any
+later event for that id simply continues it (a `step` makes it run again, with the warning card first if it has a
+directive). The CLI sends `ttl` 120 on `start`/`intervene` and 30 for the hook's automatic sessions; agents should
+still send `done` the moment they stop touching the device, before anything else. The CLI retries a failed phone
+delivery (3 tries, then the other adb link: USB ↔ Wi-Fi).
+
 ### State the host reports back
 
 After each event the host returns (Android: broadcast result data, base64 JSON; Mac: `~/Library/Application Support/AgentPresence/state.json`):
@@ -111,7 +133,16 @@ After each event the host returns (Android: broadcast result data, base64 JSON; 
 
 ## 2. Display modes
 
-Three sizes of the same thing (Dynamic-Island vocabulary):
+Three sizes of the same thing (Dynamic-Island vocabulary), plus a warning card that always comes first:
+
+- **Warning first** (owner's rule: tell the owner what to do / not do before telling them about the process, or they
+  may already have done what they must not). Whenever a session on this device gets a directive it did not show a
+  moment ago (start, intervene, a new `dont`/`do`, or `resume` bringing a set-aside "don't" back), the island first
+  opens as a **warning card** for **3 s**: header `app icon · agent · app` and, on the right, the red word
+  "Dokunma"; then each directive on its own line in large type (17 semibold) with its 32 pt gradient disc (red hand
+  for `dont`, green check for `do`); under them, secondary, the session title. Red glow. Only after that comes the
+  expanded task list (5 s, for start/intervene) or the resting size (for the other cases). Without a directive the
+  task list opens directly, as before. The warning card is click-through while the agent drives the input.
 
 - **Expanded**: header (`agent · app`, `Adım x/n` or status), title, then **the tasks one under another**: each row is a
   small status circle (done ✓ green / active orbit blue / pending grey number / waiting amber ! / failed red ✕), the task
@@ -135,7 +166,9 @@ Mode rules (both platforms):
 
 | situation | Mac | Android |
 |---|---|---|
-| start / intervene / directive added / done / fail | Expanded for **5 s** (macOS banner time) | Expanded for 5 s |
+| start / intervene with a directive on this device | **Warning card 3 s**, then Expanded 5 s | same |
+| a new directive (directive event, or resume bringing one back) | Warning card 3 s, then rest | same |
+| start / intervene without directive, done / fail | Expanded for **5 s** (macOS banner time) | Expanded for 5 s |
 | step change | Compact for 3 s | Compact for 3 s |
 | idle while running, no active directive | **Minimal** | **Minimal** (under the camera), stays until the task ends |
 | idle while running, directive active | Compact + directive capsule (never smaller) | Compact + directive capsule |
@@ -180,8 +213,8 @@ colors on both.
 - **Directive capsule** (closed sizes only). Height 36, radius = height/2, background `#141416`, 1 px border in the
   accent at 40 % (`dont` red, `do` green), a soft glow of the accent at 25 % (radius 10). Leading 22 pt circle filled
   with the accent gradient (`#FF5A4F → #E5332A` for `dont`, `#34D399 → #16A34A` for `do`) holding a white 12 pt
-  icon (hand raised / checkmark). Text `#F5F5F7` 13.5 semibold. Several directives of one session: one capsule,
-  joined with " · ".
+  icon (hand raised / checkmark). Text `#F5F5F7` 13.5 semibold. Several directives: one capsule each, stacked
+  (gap 5), like the lines of the warning card.
 - **Status badges** in the task list: capsule, 11.5 semibold, padding 8×3, fill = accent at 16 %, text = accent
   text color. Words: Bitti / Sürüyor / Sırada / Seni bekliyor / Olmadı.
 - **Task rows.** 20 pt status circle, title 13.5 (active row semibold `#F5F5F7`, done `#C7C7CC`, pending `#8E8E93`),

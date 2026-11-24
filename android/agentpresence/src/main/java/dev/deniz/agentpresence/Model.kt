@@ -71,6 +71,14 @@ data class PresenceEvent(
     val doList: List<String>? = null,
     val message: String? = null,
     val ts: Long? = null,
+    /** Seconds of silence after which the host finishes the running session itself (SPEC "Never left blocked");
+     *  0 or less clears it. */
+    val ttl: Int? = null,
+    /** Seconds a `hide` lasts before the warnings come back by themselves (JSON `for`; default 30). */
+    val forSec: Int? = null,
+    /** Internal: an event the host made itself (its own done, the end of a hide). It keeps the stored directives,
+     *  and it does not count as the agent speaking, so it does not push the ttl further. */
+    val keep: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("v", 1)
@@ -87,12 +95,14 @@ data class PresenceEvent(
         doList?.let { put("do", JSONArray(it)) }
         message?.let { put("message", it) }
         ts?.let { put("ts", it) }
+        ttl?.let { put("ttl", it) }
+        forSec?.let { put("for", it) }
     }
 
     companion object {
         val TYPES = setOf(
             "start", "intervene", "step", "detail", "directive", "attention",
-            "resume", "done", "fail", "end", "expand", "collapse",
+            "resume", "done", "fail", "end", "expand", "collapse", "hide", "unhide",
         )
 
         /** One event object or a JSON array of them. Throws [IllegalArgumentException] on bad input. */
@@ -130,6 +140,8 @@ data class PresenceEvent(
                 doList = o.list("do"),
                 message = o.str("message"),
                 ts = if (o.has("ts") && !o.isNull("ts")) o.optLong("ts") else null,
+                ttl = if (o.has("ttl") && !o.isNull("ttl")) o.optDouble("ttl", 0.0).toInt() else null,
+                forSec = if (o.has("for") && !o.isNull("for")) o.optDouble("for", 0.0).toInt() else null,
             )
         }
 
@@ -162,6 +174,12 @@ data class Session(
     val acknowledged: Boolean = false,
     val started: Long = 0L,
     val updated: Long = 0L,
+    /** Seconds of silence after which the host finishes it itself; null = never. */
+    val ttl: Int? = null,
+    /** When the agent last sent an event for it (owner taps do not count). */
+    val heard: Long = 0L,
+    /** `hide`: until when (epoch ms) every written part is off the screen and the edges glow instead; 0 = shown. */
+    val hiddenUntil: Long = 0L,
 ) {
     val total: Int get() = steps.size
 
@@ -200,6 +218,10 @@ data class Session(
             return out.distinct()
         }
 
+    /** The agent itself drives an input (touch, keyboard, ...) in a step not finished yet. */
+    val drivesInput: Boolean
+        get() = phase == Phase.RUNNING && steps.drop((step - 1).coerceAtLeast(0)).any { it.uses.isNotEmpty() }
+
     /** Something the owner must (not) do is in force: the compact pill and its capsule stay on screen. */
     val hasDirectives: Boolean get() = directives.isNotEmpty()
 
@@ -232,6 +254,9 @@ data class Session(
         put("acknowledged", acknowledged)
         put("started", started)
         put("updated", updated)
+        ttl?.let { put("ttl", it) }
+        put("heard", heard)
+        if (hiddenUntil > 0) put("hiddenUntil", hiddenUntil)
     }
 
     /** The part the agent reads back (SPEC "State the host reports back"). */
@@ -284,6 +309,9 @@ data class Session(
                 acknowledged = o.optBoolean("acknowledged"),
                 started = o.optLong("started"),
                 updated = o.optLong("updated"),
+                ttl = if (o.has("ttl") && !o.isNull("ttl")) o.optInt("ttl").takeIf { it > 0 } else null,
+                heard = o.optLong("heard", o.optLong("updated")),
+                hiddenUntil = o.optLong("hiddenUntil"),
             )
         }
 
@@ -299,12 +327,80 @@ enum class Cue { NONE, ANNOUNCE, FLASH, STICKY, EXPAND, COLLAPSE, REMOVE }
 /** Short feedback the owner can feel: attention and the end of a task. */
 enum class Buzz { NONE, ATTENTION, DONE, FAILED }
 
+/**
+ * What the island shows after an event, in order (SPEC §2, "Warning first"): the owner learns what to (not) do
+ * before anything about the process. Pure, no Android.
+ */
+object Plan {
+    enum class Show { WARNING, EXPANDED, COMPACT }
+
+    /** Show [show] for [ms] (0 = until the owner acts), then the next stage, then the resting size. */
+    data class Stage(val show: Show, val ms: Long)
+
+    const val WARNING_MS = 3_000L
+    const val ANNOUNCE_MS = 5_000L
+    const val FLASH_MS = 3_000L
+    const val TAP_MS = 8_000L
+
+    /**
+     * SPEC "Never left blocked": a running session with a ttl that heard nothing from the agent for ttl seconds is
+     * finished by the host itself. A waiting session never expires: the owner must act.
+     */
+    fun expired(s: Session, now: Long): Boolean {
+        val ttl = s.ttl ?: return false
+        return s.phase == Phase.RUNNING && ttl > 0 && now - s.heard >= ttl * 1000L
+    }
+
+    /** [s] is hidden right now (SPEC "Edge glow while hidden"). */
+    fun hidden(s: Session, now: Long) = s.hiddenUntil > now
+
+    /** A hide whose time is up: the warnings come back by themselves. */
+    fun unhideDue(s: Session, now: Long) = s.hiddenUntil in 1..now
+
+    /** When [s] expires (epoch ms), or null when it cannot. */
+    fun expiresAt(s: Session): Long? {
+        val ttl = s.ttl ?: return null
+        return if (s.phase == Phase.RUNNING && ttl > 0) s.heard + ttl * 1000L else null
+    }
+
+    /** The session now shows a directive on [here] that it did not show a moment ago ([before]). */
+    fun newDirective(before: List<Directive>, after: Session?, here: String): Boolean {
+        if (after == null || after.phase != Phase.RUNNING) return false
+        val now = after.directivesOn(here)
+        return now.isNotEmpty() && now.any { it !in before }
+    }
+
+    /**
+     * The stages for one event. null = leave the island as it is; an empty list = back to the resting size.
+     * With a new directive: the warning card first (3 s), then the task list for start/intervene, or rest.
+     */
+    fun stages(type: String, cue: Cue, warn: Boolean): List<Stage>? = when {
+        cue == Cue.REMOVE -> emptyList()
+        warn && (type == "start" || type == "intervene") ->
+            listOf(Stage(Show.WARNING, WARNING_MS), Stage(Show.EXPANDED, ANNOUNCE_MS))
+        warn -> listOf(Stage(Show.WARNING, WARNING_MS))
+        else -> when (cue) {
+            Cue.ANNOUNCE -> listOf(Stage(Show.EXPANDED, ANNOUNCE_MS))
+            Cue.STICKY -> listOf(Stage(Show.EXPANDED, 0))
+            Cue.EXPAND -> listOf(Stage(Show.EXPANDED, TAP_MS))
+            Cue.FLASH -> listOf(Stage(Show.COMPACT, FLASH_MS))
+            Cue.COLLAPSE -> emptyList()
+            Cue.NONE, Cue.REMOVE -> null
+        }
+    }
+}
+
 /** Pure session logic, no Android: one event in, the new session and what the screen should do out. */
 object Reducer {
     class Result(val session: Session?, val cue: Cue, val buzz: Buzz)
 
-    fun apply(old: Session?, e: PresenceEvent, now: Long): Result {
+    /** Seconds a `hide` lasts when it does not say (SPEC `for`). */
+    const val HIDE_SECONDS = 30
+
+    fun apply(old: Session?, e: PresenceEvent, now: Long, here: String = "phone"): Result {
         if (e.type == "end") return Result(null, Cue.REMOVE, Buzz.NONE)
+        // Hiding is about a session that exists; a stray hide/unhide does not make one.
+        if (old == null && (e.type == "hide" || e.type == "unhide")) return Result(null, Cue.NONE, Buzz.NONE)
 
         val fresh = e.type == "start" || old == null
         val base = if (fresh) Session(id = e.id, started = now) else old!!
@@ -318,6 +414,12 @@ object Reducer {
             dont = e.dont ?: base.dont,
             doList = e.doList ?: base.doList,
             updated = now,
+            heard = if (e.keep) base.heard else now,
+            ttl = when {
+                e.ttl == null -> base.ttl
+                e.ttl > 0 -> e.ttl
+                else -> null
+            },
         )
         s = s.copy(step = clamp(s.step, s))
 
@@ -349,24 +451,34 @@ object Reducer {
                 cue = if (newDont || newDo) Cue.ANNOUNCE else Cue.NONE
             }
             "attention" -> {
-                s = s.copy(phase = Phase.WAITING, acknowledged = false, message = e.message)
+                s = s.copy(phase = Phase.WAITING, acknowledged = false, message = e.message, hiddenUntil = 0L)
                 cue = Cue.STICKY
                 buzz = Buzz.ATTENTION
             }
             "resume" -> s = s.copy(phase = Phase.RUNNING, acknowledged = false)
             "done" -> {
                 s = s.copy(
-                    phase = Phase.DONE, step = s.total.coerceAtLeast(1), message = e.message,
-                    dont = emptyList(), doList = e.doList ?: emptyList(),
+                    phase = Phase.DONE, step = s.total.coerceAtLeast(1), message = e.message, hiddenUntil = 0L,
+                    dont = if (e.keep) s.dont else emptyList(),
+                    doList = e.doList ?: if (e.keep) s.doList else emptyList(),
                 )
                 cue = Cue.ANNOUNCE
                 buzz = Buzz.DONE
             }
             "fail" -> {
-                s = s.copy(phase = Phase.FAILED, message = e.message, dont = emptyList(), doList = e.doList ?: emptyList())
+                s = s.copy(
+                    phase = Phase.FAILED, message = e.message, hiddenUntil = 0L,
+                    dont = emptyList(), doList = e.doList ?: emptyList(),
+                )
                 cue = Cue.ANNOUNCE
                 buzz = Buzz.FAILED
             }
+            // The agent must see or tap what is under the island (SPEC): the written parts go, the edges glow.
+            // Only on the device being driven: a mirror ignores it.
+            "hide" -> if (!s.mirroredOn(here)) {
+                s = s.copy(hiddenUntil = now + (e.forSec?.takeIf { it > 0 } ?: HIDE_SECONDS) * 1000L)
+            }
+            "unhide" -> s = s.copy(hiddenUntil = 0L)
             "expand" -> cue = Cue.EXPAND
             "collapse" -> cue = Cue.COLLAPSE
         }

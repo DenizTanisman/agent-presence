@@ -66,6 +66,40 @@ final class ReducerTests: XCTestCase {
         XCTAssertEqual(s[2].directives(tr: true).map(\.text), ["Trackpad'e dokunma"], "without tags the hand-written one stays")
     }
 
+    func testTTLExpiry() {
+        var s: [Session] = []
+        Reducer.apply(ev(.start) { $0.ttl = 30 }, to: &s, now: 1_000)
+        XCTAssertFalse(s[0].expired(now: 30_000))
+        XCTAssertTrue(s[0].expired(now: 31_500), "30 s of silence")
+        Reducer.apply(ev(.step), to: &s, now: 31_000)
+        XCTAssertFalse(s[0].expired(now: 31_500), "any event refreshes it")
+        Reducer.apply(ev(.attention), to: &s, now: 32_000)
+        XCTAssertFalse(s[0].expired(now: 999_000), "waiting never expires")
+        Reducer.apply(ev(.start, "n"), to: &s, now: 1_000)
+        XCTAssertFalse(s.first { $0.id == "n" }!.expired(now: 999_000), "no ttl, no expiry")
+        Reducer.apply(ev(.done), to: &s, now: 40_000)
+        Reducer.apply(ev(.step), to: &s, now: 41_000)
+        XCTAssertEqual(s.first { $0.id == "a" }?.phase, .running, "a later step continues a finished session")
+    }
+
+    func testHideUnhide() {
+        var s: [Session] = []
+        Reducer.apply(ev(.start), to: &s, now: 0)
+        Reducer.apply(ev(.hide) { $0.forSeconds = 10 }, to: &s, now: 1_000)
+        XCTAssertTrue(s[0].hidden(now: 5_000))
+        XCTAssertFalse(s[0].hidden(now: 11_500), "comes back by itself")
+        Reducer.apply(ev(.hide), to: &s, now: 20_000)
+        XCTAssertTrue(s[0].hidden(now: 49_000), "default 30 s")
+        Reducer.apply(ev(.unhide), to: &s, now: 21_000)
+        XCTAssertFalse(s[0].hidden(now: 21_000))
+        Reducer.apply(ev(.hide), to: &s, now: 22_000)
+        Reducer.apply(ev(.attention), to: &s, now: 23_000)
+        XCTAssertFalse(s[0].hidden(now: 23_000), "asking the owner shows everything")
+        Reducer.apply(ev(.hide), to: &s, now: 24_000)
+        Reducer.apply(ev(.done), to: &s, now: 25_000)
+        XCTAssertFalse(s[0].hidden(now: 25_000))
+    }
+
     func testWaitingSetsDirectivesAside() {
         var s: [Session] = []
         Reducer.apply(ev(.start) { $0.steps = [Step("Yaz", uses: [.keyboard])] }, to: &s, now: 1)

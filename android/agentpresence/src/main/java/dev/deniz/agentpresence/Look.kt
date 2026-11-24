@@ -71,6 +71,7 @@ internal object Strings {
     val noKeys get() = if (tr) "Klavyeye dokunma" else "Don't type"
     val noMouse get() = if (tr) "Trackpad'e dokunma" else "Don't touch the trackpad"
     val noTouch get() = if (tr) "Ekrana dokunma" else "Don't touch the screen"
+    val selfDone get() = if (tr) "Bitti, artık kullanabilirsin" else "Done, you can use it now"
     val show get() = if (tr) "Göster" else "Show"
     val channel get() = if (tr) "Ajan durumu" else "Agent status"
     val channelEnd get() = if (tr) "Ajan bitti / olmadı" else "Agent finished"

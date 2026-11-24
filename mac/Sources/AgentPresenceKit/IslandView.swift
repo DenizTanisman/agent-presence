@@ -52,14 +52,15 @@ public struct IslandRoot: View {
         switch m {
         case .minimal: dot
         case .compact: geo.hasNotch ? geo.notchWidth + 2 * wing : 300
-        case .expanded: max(geo.hasNotch ? geo.notchWidth + 2 * 142 : 0, 470)
+        case .expanded, .warning: max(geo.hasNotch ? geo.notchWidth + 2 * 142 : 0, 470)
         }
     }
 
     public var body: some View {
         ZStack(alignment: .top) {
             Color.clear
-            if let p = store.primary {
+            // Hidden by the agent: nothing written, nothing to click (the red screen edges say it instead).
+            if !store.hidden, let p = store.primary {
                 let w = width(store.mode, p)
                 Group {
                     if store.mode == .minimal {
@@ -76,7 +77,7 @@ public struct IslandRoot: View {
                         y: store.mode == .minimal && geo.hasNotch ? (geo.barHeight - dot) / 2 : topY)
 
                 // Directives live only in the closed sizes, in their own capsule under the island (SPEC.md §2).
-                if store.mode != .expanded {
+                if store.mode != .expanded && store.mode != .warning {
                     let caps = capsules(primary: p)
                     if !caps.isEmpty {
                         VStack(spacing: 5) {
@@ -124,10 +125,8 @@ public struct IslandRoot: View {
             let d = s.directives(tr: L.tr, on: host)
             guard !d.isEmpty else { continue }
             let prefix = s.id == p.id ? "" : "\(s.app ?? s.agent): "
-            let donts = d.filter { $0.kind == .dont }.map(\.text)
-            let dos = d.filter { $0.kind == .doThis }.map(\.text)
-            if !donts.isEmpty { out.append(CapsuleItem(text: prefix + donts.joined(separator: " · "), dont: true)) }
-            if !dos.isEmpty { out.append(CapsuleItem(text: prefix + dos.joined(separator: " · "), dont: false)) }
+            // One capsule per directive, stacked like the warning card: each one reads on its own.
+            for item in d { out.append(CapsuleItem(text: prefix + item.text, dont: item.kind == .dont)) }
         }
         return out
     }
@@ -135,11 +134,14 @@ public struct IslandRoot: View {
     // MARK: compact + expanded share one black shape that grows out of the notch
 
     private func island(_ s: Session, width w: CGFloat) -> some View {
-        let expanded = store.mode == .expanded
+        let expanded = store.mode == .expanded || store.mode == .warning
         let radius: CGFloat = expanded ? 26 : (geo.hasNotch ? min(geo.barHeight / 2, 16) : 18)
         let shape = IslandShape(bottomRadius: radius, topRadius: geo.hasNotch ? 0 : radius, ear: geo.hasNotch ? 7 : 0)
         return VStack(spacing: 0) {
-            if expanded {
+            if store.mode == .warning {
+                WarningBody(s: s, geo: geo, badge: badge(s), host: host)
+                    .transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.08)))
+            } else if expanded {
                 ExpandedBody(s: s, store: store, geo: geo, badge: badge(s))
                     .transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.08)))
             } else {
@@ -151,7 +153,8 @@ public struct IslandRoot: View {
         .background(shape.fill(Theme.surface))
         .overlay(geo.hasNotch ? nil : shape.stroke(Color.white.opacity(0.12), lineWidth: 1))
         .clipShape(shape)
-        .modifier(Glow(color: Glow.color(for: s), pulse: s.phase == .waiting && !s.acknowledged))
+        .modifier(Glow(color: store.mode == .warning ? Theme.red : Glow.color(for: s),
+                       pulse: s.phase == .waiting && !s.acknowledged))
         .contentShape(shape)
         .onTapGesture { store.tapIsland() }
         .hitArea()
@@ -363,6 +366,74 @@ struct DirectiveCapsule: View {
         .shadow(color: accent.opacity(0.25), radius: 10)
         .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// MARK: warning: what to (not) do, before anything else
+
+/// The card that opens first when there is something the owner must (not) do (SPEC §2 "Warning first").
+struct WarningBody: View {
+    var s: Session
+    var geo: IslandGeometry
+    var badge: String?
+    var host: String
+
+    private var items: [Directive] { s.directives(tr: L.tr, on: host) }
+    private var hasDont: Bool { items.contains { $0.kind == .dont } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if geo.hasNotch {
+                HStack(spacing: 0) {
+                    who.frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: geo.notchWidth + 8)
+                    tag.frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .frame(height: geo.barHeight)
+            } else {
+                HStack { who; Spacer(); tag }.padding(.top, 12)
+            }
+            VStack(alignment: .leading, spacing: 11) {
+                ForEach(items, id: \.self) { d in
+                    HStack(spacing: 12) {
+                        Image(systemName: d.kind == .dont ? "hand.raised.fill" : "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(LinearGradient(
+                                colors: d.kind == .dont ? [Color(hex: 0xFF5A4F), Color(hex: 0xE5332A)] : [Color(hex: 0x34D399), Color(hex: 0x16A34A)],
+                                startPoint: .top, endPoint: .bottom)))
+                            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+                        Text(d.text)
+                            .font(.system(size: 17, weight: .semibold))
+                            .tracking(-0.3)
+                            .foregroundStyle(Theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Text(s.title.isEmpty ? (s.app ?? s.agent) : s.title)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Theme.secondary)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 18)
+    }
+
+    private var who: some View {
+        HStack(spacing: 7) {
+            AppBadge(name: s.app, size: 20)
+            Text(([s.agent, s.app] as [String?]).compactMap { $0 }.joined(separator: " · ")).lineLimit(1)
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(Theme.secondary)
+    }
+
+    private var tag: some View {
+        Text(hasDont ? L.handsOff : (L.tr ? "Senden istenen" : "Please"))
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(hasDont ? Theme.redText : Theme.greenText)
     }
 }
 

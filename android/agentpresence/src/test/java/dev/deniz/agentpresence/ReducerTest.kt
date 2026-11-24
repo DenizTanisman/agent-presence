@@ -263,6 +263,174 @@ class ReducerTest {
         assertEquals(listOf("-Klavyeye dokunma", "-Ekranı kapatma"), s!!.texts())
     }
 
+    // ---------------------------------------------------------------- v1.3: warning first
+
+    /** Applies the events in order and returns the stages the last one plays, like AgentPresence.send does. */
+    private fun plan(vararg json: String): List<Plan.Stage>? {
+        var s: Session? = null
+        var stages: List<Plan.Stage>? = null
+        var t = 1000L
+        for (j in json) {
+            val e = ev(j)
+            val before = s?.directivesOn("phone").orEmpty()
+            val r = Reducer.apply(s, e, t++)
+            stages = Plan.stages(e.type, r.cue, Plan.newDirective(before, r.session, "phone"))
+            s = r.session
+        }
+        return stages
+    }
+
+    private val W = Plan.Stage(Plan.Show.WARNING, Plan.WARNING_MS)
+    private val E = Plan.Stage(Plan.Show.EXPANDED, Plan.ANNOUNCE_MS)
+
+    @Test fun startWithADirectiveWarnsFirstThenOpensTheTaskList() {
+        assertEquals(listOf(W, E), plan("""{"id":"w","type":"start","steps":[{"title":"Aç","uses":["touch"]},"Bul"]}"""))
+        assertEquals(listOf(W, E), plan("""{"id":"w","type":"start","dont":["Kabloya dokunma"]}"""))
+    }
+
+    @Test fun startWithoutADirectiveOpensTheTaskListDirectly() {
+        assertEquals(listOf(E), plan("""{"id":"w","type":"start","steps":["Aç","Bul"]}"""))
+    }
+
+    @Test fun resumeBringingADontBackWarnsThenRests() {
+        assertEquals(
+            listOf(W),
+            plan(
+                """{"id":"w","type":"start","steps":["Aç"],"dont":["Telefonu kapatma"]}""",
+                """{"id":"w","type":"attention","message":"Şifre"}""",
+                """{"id":"w","type":"resume"}""",
+            ),
+        )
+    }
+
+    @Test fun aDirectiveEventThatAddsOneWarnsAndOneThatRepeatsDoesNot() {
+        val base = """{"id":"w","type":"start","steps":["Aç","Bul"],"dont":["Kabloya dokunma"]}"""
+        assertEquals(listOf(W), plan(base, """{"id":"w","type":"directive","do":["Şarjı tak"]}"""))
+        assertNull(plan(base, """{"id":"w","type":"directive","dont":["Kabloya dokunma"]}"""))
+    }
+
+    @Test fun stepsDoneAndMirrorsDoNotWarn() {
+        val base = """{"id":"w","type":"start","steps":[{"title":"Aç","uses":["touch"]},"Bul"]}"""
+        assertEquals(listOf(Plan.Stage(Plan.Show.COMPACT, Plan.FLASH_MS)), plan(base, """{"id":"w","type":"step"}"""))
+        assertEquals(listOf(E), plan(base, """{"id":"w","type":"done"}"""))
+        assertEquals("a Mac session is never warned about on the phone",
+            listOf(E), plan("""{"id":"m","type":"start","device":"mac","steps":[{"title":"Yaz","uses":["keyboard"]}]}"""))
+    }
+
+    @Test fun drivesInputFollowsTheStepsStillAhead() {
+        val (s, _) = run("""{"id":"d","type":"start","steps":[{"title":"Aç","uses":["touch"]},"Bul"]}""")
+        assertTrue(s!!.drivesInput)
+        val (s2, _) = run("""{"id":"d","type":"start","steps":[{"title":"Aç","uses":["touch"]},"Bul"]}""", """{"id":"d","type":"step"}""")
+        assertFalse(s2!!.drivesInput)
+    }
+
+    // ---------------------------------------------------------------- never left blocked (ttl)
+
+    /** Applies events at the given times (ms). */
+    private fun at(vararg ev: Pair<Long, String>): Session? {
+        var s: Session? = null
+        for ((t, j) in ev) s = Reducer.apply(s, ev(j), t).session
+        return s
+    }
+
+    private val ttlStart = """{"id":"t","type":"start","ttl":15,"steps":[{"title":"Kaydır","uses":["touch"]},"Bitir"],"dont":["Kabloya dokunma"]}"""
+
+    @Test fun aRunningSessionThatHeardNothingForItsTtlExpires() {
+        val s = at(1_000L to ttlStart)!!
+        assertEquals(15, s.ttl)
+        assertFalse(Plan.expired(s, 1_000L + 14_999))
+        assertTrue(Plan.expired(s, 1_000L + 15_000))
+        assertEquals(16_000L, Plan.expiresAt(s))
+    }
+
+    @Test fun aWaitingSessionNeverExpires() {
+        val s = at(1_000L to ttlStart, 2_000L to """{"id":"t","type":"attention","message":"Şifre"}""")!!
+        assertFalse(Plan.expired(s, 10_000_000L))
+        assertNull(Plan.expiresAt(s))
+    }
+
+    @Test fun withoutTtlNothingExpires() {
+        val s = at(1_000L to """{"id":"n","type":"start","steps":["Aç"]}""")!!
+        assertFalse(Plan.expired(s, 10_000_000L))
+        val cleared = at(1_000L to ttlStart, 2_000L to """{"id":"t","type":"detail","detail":"x","ttl":0}""")!!
+        assertNull(cleared.ttl)
+        assertFalse(Plan.expired(cleared, 10_000_000L))
+    }
+
+    @Test fun anEventRefreshesTheClock() {
+        val s = at(1_000L to ttlStart, 12_000L to """{"id":"t","type":"detail","detail":"3/10"}""")!!
+        assertFalse("heard 4 s ago, not 15", Plan.expired(s, 16_000L))
+        assertTrue(Plan.expired(s, 27_000L))
+        assertEquals("the ttl stays when an event does not carry one", 15, s.ttl)
+    }
+
+    @Test fun theHostsOwnDoneKeepsTheDirectivesForALaterStep() {
+        val s = at(1_000L to ttlStart)!!
+        val done = Reducer.apply(s, PresenceEvent(id = "t", type = "done", message = "Bitti", keep = true), 20_000L).session!!
+        assertEquals(Phase.DONE, done.phase)
+        assertTrue("nothing shows once it is done", done.directivesOn("phone").isEmpty())
+        val before = done.directivesOn("phone")
+        val r = Reducer.apply(done, ev("""{"id":"t","type":"step","step":1}"""), 30_000L)
+        assertEquals(Phase.RUNNING, r.session!!.phase)
+        assertEquals(listOf("-Ekrana dokunma", "-Kabloya dokunma"), r.session!!.texts())
+        assertEquals("it continues, warning first", listOf(W), Plan.stages("step", r.cue, Plan.newDirective(before, r.session, "phone")))
+    }
+
+    @Test fun ttlRoundTripsThroughJson() {
+        val s = at(1_000L to ttlStart)!!
+        assertEquals(s, Session.fromJson(s.toJson()))
+    }
+
+    // ---------------------------------------------------------------- hide / unhide (edge glow)
+
+    private val running = """{"id":"h","type":"start","ttl":120,"steps":[{"title":"Kaydır","uses":["touch"]},"Bitir"]}"""
+
+    @Test fun hideSetsAnUntilTimeDefaultThirtySeconds() {
+        val s = at(1_000L to running, 2_000L to """{"id":"h","type":"hide"}""")!!
+        assertEquals(32_000L, s.hiddenUntil)
+        assertTrue(Plan.hidden(s, 31_999L))
+        assertFalse(Plan.hidden(s, 32_000L))
+        val f = at(1_000L to running, 2_000L to """{"id":"h","type":"hide","for":10}""")!!
+        assertEquals(12_000L, f.hiddenUntil)
+        assertEquals("hiding keeps the session running", Phase.RUNNING, f.phase)
+    }
+
+    @Test fun unhideDoneFailAttentionClearItAndEndRemoves() {
+        val hide = 2_000L to """{"id":"h","type":"hide"}"""
+        for (j in listOf("""{"id":"h","type":"unhide"}""", """{"id":"h","type":"done"}""",
+            """{"id":"h","type":"fail","message":"x"}""", """{"id":"h","type":"attention","message":"x"}""")) {
+            val s = at(1_000L to running, hide, 3_000L to j)!!
+            assertEquals(j, 0L, s.hiddenUntil)
+        }
+        assertNull(at(1_000L to running, hide, 3_000L to """{"id":"h","type":"end"}"""))
+    }
+
+    @Test fun otherEventsKeepItHidden() {
+        val s = at(1_000L to running, 2_000L to """{"id":"h","type":"hide"}""", 3_000L to """{"id":"h","type":"step"}""")!!
+        assertEquals(32_000L, s.hiddenUntil)
+    }
+
+    @Test fun theHideEndsByItselfWhenItsTimeIsUp() {
+        val s = at(1_000L to running, 2_000L to """{"id":"h","type":"hide","for":5}""")!!
+        assertFalse(Plan.unhideDue(s, 6_999L))
+        assertTrue(Plan.unhideDue(s, 7_000L))
+        val back = Reducer.apply(s, PresenceEvent(id = "h", type = "unhide", keep = true), 7_000L).session!!
+        assertEquals(0L, back.hiddenUntil)
+        assertEquals("the host's own unhide does not count as the agent speaking", s.heard, back.heard)
+        assertFalse(Plan.unhideDue(back, 100_000L))
+    }
+
+    @Test fun aMirrorIgnoresHideAndAStrayHideMakesNoSession() {
+        val mac = at(1_000L to """{"id":"m","type":"start","device":"mac"}""", 2_000L to """{"id":"m","type":"hide"}""")!!
+        assertEquals(0L, mac.hiddenUntil)
+        assertNull(Reducer.apply(null, ev("""{"id":"x","type":"hide"}"""), 1_000L).session)
+    }
+
+    @Test fun hiddenRoundTripsThroughJson() {
+        val s = at(1_000L to running, 2_000L to """{"id":"h","type":"hide"}""")!!
+        assertEquals(s, Session.fromJson(s.toJson()))
+    }
+
     @Test fun mirror() {
         val (s, _) = run("""{"id":"m","type":"start","device":"mac"}""")
         assertTrue(s!!.mirroredOn("phone"))
